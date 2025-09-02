@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Welcome to PlaqueCalculatorApp</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #f0f4f8;
+      color: #334155;
+      overflow: hidden;
+    }
+    .container {
+      text-align: center;
+      background-color: #ffffff;
+      padding: 40px 60px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+      max-width: 500px;
+      width: 90%;
+    }
+    h1 {
+      color: #1e3a8a;
+      margin-bottom: 20px;
+      font-size: 2.5em;
+      font-weight: 700;
+    }
+    p {
+      font-size: 1.1em;
+      color: #4a5568;
+      margin-bottom: 30px;
+    }
+    .start-button {
+      background-color: #22c55e;
+      color: white;
+      padding: 15px 35px;
+      font-size: 1.3em;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      margin-top: 20px;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+      box-shadow: 0 4px 10px rgba(34, 197, 94, 0.3);
+    }
+    .start-button:hover {
+      background-color: #16a34a;
+      transform: translateY(-2px);
+    }
+    .start-button:active {
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Welcome to PlaqueCalculatorApp!</h1>
+    <p>Application that calculates relation information content values, shows plaque and processes normalization steps.</p>
+    <!-- Processing with Thymeleaf -->
+    <a th:href="@{/calc}" class="start-button">Start Calculation</a>
+  </div>
+</body>
+</html>

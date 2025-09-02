@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Normalization Tool</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}" />
+
+  <script th:inline="javascript">
+    /*<![CDATA[*/
+    window.originalTable   = /*[[${initialCalcTableJson}]]*/ [];
+    window.ricMatrixTable  = /*[[${ricJson}]]*/ [];
+    console.log("⚙️ initialCalcTable =", window.originalTable);
+    console.log("⚙️ ricMatrixTable  =", window.ricMatrixTable);
+    /*]]>*/
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script defer th:src="@{/js/normalize.js}"></script>
+</head>
+<body>
+<div class="normalization-container">
+  <div class="norm-header">
+    <h2>Normalization Assistant</h2>
+  </div>
+
+  <h3>Original Table:</h3>
+  <div class="orig-with-add">
+    <div id="originalTableContainer"></div>
+
+    <div class="add-table-container">
+      <button id="addTable" class="button">+ Add Table</button>
+    </div>
+
+    <!-- FD list positioned top-right -->
+    <div id="fdListContainer" th:if="${fdItems.size()} > 0">
+      <h3>Functional Dependencies</h3>
+      <ul>
+        <li th:each="fd : ${fdItems}"
+            th:text="${fd}"
+            th:classappend="${fdInferred.contains(fd)} ? 'inferred' : ''">
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Container for dynamic decomposed tables -->
+  <div id="decomposedTablesContainer"></div>
+
+  <div id="normalizedOutput"></div>
+</div>
+</body>
+</html>

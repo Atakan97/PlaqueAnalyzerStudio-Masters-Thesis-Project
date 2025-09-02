@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title>Plaque Calculator</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}" />
+</head>
+<body>
+
+<h1>PlaqueCalculator</h1>
+<h2>Input & Parameters</h2>
+
+<form id="calcForm"
+      th:action="@{/compute}"
+      method="post"
+      enctype="multipart/form-data">
+  <!-- Tab Bar for Data Input -->
+  <div class="tab-bar">
+    <button type="button" id="tab-upload" class="tab active">Upload CSV</button>
+    <button type="button" id="tab-manual" class="tab">Enter Manual Data</button>
+  </div>
+
+  <!-- CSV Section -->
+  <div id="section-upload" class="tab-content">
+    <input type="file" id="csvfile" name="csvfile" accept=".csv" />
+    <div class="preview">
+      <small>Preview (first 5 rows):</small>
+      <table id="csvPreview"><thead></thead><tbody></tbody></table>
+      <a href="#" id="showMoreCsv">Show more…</a>
+    </div>
+  </div>
+
+  <!-- Manual Section -->
+  <div id="section-manual" class="tab-content" style="display:none">
+    <table id="manualTable" class="data-grid">
+      <thead>
+      <tr><th>Col1</th><th>Col2</th><th>Col3</th><th>Del</th></tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td contenteditable></td>
+        <td contenteditable></td>
+        <td contenteditable></td>
+        <td><button type="button" class="delManualRow">×</button></td>
+      </tr>
+      </tbody>
+    </table>
+    <button type="button" id="addRow" class="small">+ Add Row</button>
+    <div class="hint">Please use tabular format. Column names in the first row.</div>
+  </div>
+
+  <h2>Functional Dependencies List</h2>
+  <!-- FD Tabs -->
+  <div class="tab-bar">
+    <button type="button" id="tab-fd-manual" class="tab active">Enter FD Manually</button>
+    <button type="button" id="tab-fd-upload" class="tab">Upload FD File</button>
+  </div>
+  <div id="fd-manual" class="tab-content">
+    <button type="button" id="addFdBtn" class="small">+ Add FD</button>
+    <table id="fdTable" class="data-grid">
+      <thead><tr><th>#</th><th>X</th><th>→</th><th>Y</th><th>Del</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div id="fd-upload" class="tab-content" style="display:none">
+    <input type="file" name="fdfile" id="fdfile" accept=".txt,.csv" />
+    <small>Please enter one FD per line, format: X→Y</small>
+    <div class="preview">
+      <table id="fdPreview" class="data-grid">
+        <thead><tr><th>X</th><th>→</th><th>Y</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <a href="#" id="showMoreFd">Show more…</a>
+    </div>
+  </div>
+
+  <!-- Calculation Options -->
+  <div class="options">
+    <label><input type="checkbox" id="mcCheckbox" name="monteCarlo" /> Use Monte Carlo Approximation</label>
+    <label># of Samples: <input type="number" id="samples" name="samples" value="50000" disabled /></label>
+  </div>
+
+  <!-- Hidden fields -->
+  <input type="hidden" name="manualData" id="manualData" />
+  <input type="hidden" name="fds"        id="fdsInput" />
+
+  <!-- Compute Button-->
+  <button type="submit" id="computeBtn" class="compute-btn">Compute Plaque</button>
+</form>
+
+<!-- Input Data section -->
+<div th:if="${inputData != null}">
+  <h3>Input Data:</h3>
+  <table class="data-grid">
+    <thead>
+    <tr>
+      <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
+          th:text="${i}"></th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="row : ${inputData.split(';')}">
+      <td th:each="cell : ${row.split(',')}"
+          th:text="${cell}">val</td>
+    </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Functional dependencies list section -->
+<div th:if="${fdList != null and fdList != ''}">
+  <h3>Functional Dependencies:</h3>
+  <ul>
+    <li th:each="fd : ${fdList.split(';')}" th:text="${fd}">X->Y</li>
+  </ul>
+</div>
+
+<!-- If the compute was successful, two table under the “Calculation Results” header -->
+<div th:if="${ricMatrix != null}">
+  <h3>Calculation Results:</h3>
+
+  <!-- Initial Calculation Table -->
+  <table id="initialCalcTable" class="data-grid">
+    <thead>
+    <tr>
+      <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
+          th:text="${i}"></th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="row, rsStat : ${inputData.split(';')}">
+      <td th:each="cell, csStat : ${row.split(',')}"
+          th:classappend="${ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0'} ? 'plaque-cell' : ''"
+          th:text="${cell}">val</td>
+    </tr>
+    </tbody>
+  </table>
+
+  <!-- Relational information content table, hidden initially -->
+  <table id="ricTable" class="data-grid" style="display:none">
+    <thead>
+    <tr>
+      <th th:each="i : ${#numbers.sequence(1, ricMatrix[0].length)}"
+          th:text="${i}"></th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="row : ${ricMatrix}">
+      <td th:each="cell : ${row}"
+          th:classappend="${cell != '1' and cell != '1.0'} ? 'plaque-cell' : ''"
+          th:text="${cell}"></td>
+    </tr>
+    </tbody>
+  </table>
+
+  <!-- Buttons that change between tables -->
+  <button id="showCalcBtn" type="button" class="small">
+    Show Information Contents
+  </button>
+  <button id="returnBtn" type="button" class="small" style="display:none">
+    Return to Input
+  </button>
+
+  <!-- Going for normalization page section -->
+  <form th:action="@{/normalization}" method="get" class="start-normalize-form">
+    <button type="submit" class="small">Start Normalization</button>
+  </form>
+</div>
+
+<!-- Giving ricMatrix directly with Inline JS -->
+<script th:inline="javascript">
+  /*<![CDATA[*/
+  window.ricMatrix = /*[[${ricMatrix}]]*/ [];
+  /*]]>*/
+</script>
+<script th:src="@{/js/main.js}"></script>
+</body>
+</html>
