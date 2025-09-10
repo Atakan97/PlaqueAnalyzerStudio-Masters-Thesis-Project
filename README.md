@@ -23,17 +23,17 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 2. **Check that the external RIC JAR is available** 
 
+   Important: 
+   
+   This JAR is mandatory. 
+   It is built separately from the relational_information_content project and already included in the repository under libs/.
+
    The folder libs/ must contain the file:
 
    ```bash
    relational_information_content-1.0-SNAPSHOT-jar-with-dependencies.jar
 
-   Important: 
-
-   This JAR is mandatory. 
-   It is built separately from the relational_information_content project and already included in the repository under libs/.
-
-
+   
 3. **Check that application.properties file has corrent path**
 
    To avoid any error while finding the path, please set the path in application.properties like this:
