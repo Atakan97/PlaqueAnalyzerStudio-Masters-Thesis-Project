@@ -45,7 +45,6 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
    cd path/to/relational_information_content
    mvn -DskipTests package
 
-   
 4. **Check that application.properties file has correct path**
 
    The application.properties file is located in the src/main/resources location in the project files.
