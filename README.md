@@ -36,7 +36,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 3. **(Optional) If no JAR files are found in the libs folder**
 
-   Firstly, running and generating JAR files in the relational_information_content project is mandatory.
+   Firstly, the JAR files need to be run and created in the relational_information_content project.
 
    Then the JARs created in the target file of the relational_information_content project can be moved to the libs folder of the plaque-calculator project.
 
