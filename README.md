@@ -19,6 +19,10 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    After downloading the project to the device, the location path of the project must be used with the cd command.
 
+   Note: 
+
+   If the project name is set up as "plaque-calculator-app" on the device, a command like "cd plaque-calculator-app" should be used to navigate to the project location.
+   
    ```bash
    git clone https://git.fim.uni-passau.de/sdbs/theses/students/mt-atakan-celik-code.git
    cd mt-atakan-celik-code
