@@ -33,8 +33,20 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
    ```bash
    relational_information_content-1.0-SNAPSHOT-jar-with-dependencies.jar
 
+3. **(Optional) If no JAR files are found in the libs folder**
+
+   Firstly, running and generating JAR files in the relational_information_content project is mandatory.
+
+   Then the JARs created in the target file of the relational_information_content project can be moved to the libs folder of the plaque-calculator project.
+
+   Generate a JAR file by running the relational_information_content project:
+
+   ```bash
+   cd path/to/relational_information_content
+   mvn -DskipTests package
+
    
-3. **Check that application.properties file has corrent path**
+4. **Check that application.properties file has corrent path**
 
    To avoid any error while finding the path, please set the path in application.properties like this:
 
