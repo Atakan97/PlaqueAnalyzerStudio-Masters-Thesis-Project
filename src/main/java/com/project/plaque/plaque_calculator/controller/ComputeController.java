@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.project.plaque.plaque_calculator.model.FD;
 import com.project.plaque.plaque_calculator.service.FDService;
 import com.project.plaque.plaque_calculator.service.RicService;
+import com.project.plaque.plaque_calculator.service.LogService;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -19,12 +20,14 @@ public class ComputeController {
 
 	private final FDService fdService;
 	private final RicService ricService;
+	private final LogService logService;
 	private final Gson gson = new Gson();
 
 	// Adding RicService in addition to FDService
-	public ComputeController(FDService fdService, RicService ricService) {
+	public ComputeController(FDService fdService, RicService ricService, LogService logService) {
 		this.fdService = fdService;
 		this.ricService = ricService;
+		this.logService = logService;
 	}
 
 	@PostMapping
@@ -36,20 +39,41 @@ public class ComputeController {
 			HttpSession session,
 			Model model
 	) {
+
+		// Clear old normalization history when a new calculation starts
+		session.removeAttribute("normalizationHistory");
+		session.removeAttribute("fdList");
+		session.removeAttribute("fdListWithClosure");
+		session.removeAttribute("originalFDs");
+		session.removeAttribute("usingDecomposedAsOriginal");
+		session.removeAttribute("currentRelationsManual");
+		session.removeAttribute("currentRelationsColumns");
+		session.removeAttribute("currentRelationsFds");
+
 		// Converting user's input to safe strings
 		String safeManual = Optional.ofNullable(manualData).orElse("").trim();
 		String safeFds = Optional.ofNullable(fds).orElse("").trim();
 
+		// Checking whether the incoming data is empty after processing the rows
+		// If there are empty rows, remove them and get the filled rows
+		if (!safeManual.isEmpty()) {
+			safeManual = Arrays.stream(safeManual.split(";"))
+					.map(String::trim)
+					.filter(row -> !row.replace(",", "").trim().isEmpty())
+					.collect(Collectors.joining(";"));
+		}
+
 		// Call RicService (monteCarlo and samples forwarded)
 		double[][] ricArr = new double[0][0];
+		String errorMessage = null;
 		try {
 			ricArr = ricService.computeRicFromManualData(safeManual, safeFds, monteCarlo, samples);
 		} catch (Exception ex) {
 			ex.printStackTrace();
-			model.addAttribute("ricError", "RIC hesaplamasında hata: " + ex.getMessage());
+			model.addAttribute("ricError", "Error while calculating information content: " + ex.getMessage());
 		}
 
-		// converting double[][] -> List<String[]> for model and session
+		// Converting double[][] -> List<String[]> for model and session
 		List<String[]> matrixForModel = new ArrayList<>();
 		for (double[] row : ricArr) {
 			String[] rowStr = new String[row.length];
@@ -103,13 +127,11 @@ public class ComputeController {
 					.collect(Collectors.toList());
 		}
 		session.setAttribute("originalAttrOrder", originalAttrOrder);
-		System.out.println("DEBUG: originalAttrOrder -> " + originalAttrOrder);
 
 		// attribute indices
 		List<Integer> originalAttrIndices = new ArrayList<>();
 		for (int i = 0; i < originalAttrOrder.size(); i++) originalAttrIndices.add(i);
 		session.setAttribute("originalAttrIndices", originalAttrIndices);
-		System.out.println("DEBUG: originalAttrIndices -> " + originalAttrIndices);
 
 		// store fdList in session
 		session.setAttribute("fdList", safeFds);
@@ -118,21 +140,40 @@ public class ComputeController {
 		List<FD> originalFDs = parseFdsString(safeFds);
 		session.setAttribute("originalFDs", originalFDs);
 
-		// build fdListWithClosure (try/catch so it won't break UI on error)
-		try {
-			String fdListWithClosure = buildFdListWithClosure(safeFds, originalFDs, originalAttrOrder);
-			session.setAttribute("fdListWithClosure", fdListWithClosure);
-			System.out.println("DEBUG: fdListWithClosure -> " + fdListWithClosure);
-		} catch (Exception ex) {
-			ex.printStackTrace();
-			session.setAttribute("fdListWithClosure", safeFds);
-		}
+		// Find FDs derived only by transitivity
+		List<FD> transitiveFDs = fdService.findTransitiveFDs(originalFDs);
 
-		// model attributes for the view
-		model.addAttribute("inputData", manualData);
-		model.addAttribute("fdList", fds);
+		// First convert the original list to string and sort it
+		List<String> originalFdStrings = originalFDs.stream()
+				.map(FD::toString)
+				.sorted()
+				.collect(Collectors.toList());
 
-		return "calc";
+		// Then convert the derived list to string and sort it
+		List<String> transitiveFdStrings = transitiveFDs.stream()
+				.map(FD::toString)
+				.sorted()
+				.collect(Collectors.toList());
+
+		// Merge the two lists, this will ensure that the originals always come first
+		List<String> allFdStringsToShow = new ArrayList<>(originalFdStrings);
+		allFdStringsToShow.addAll(transitiveFdStrings);
+
+		// Clear duplicate elements with using LinkedHashSet
+		List<String> distinctSortedList = new ArrayList<>(new LinkedHashSet<>(allFdStringsToShow));
+
+		// Save the merged and distinct version for session
+		session.setAttribute("fdListWithClosure", String.join(";", distinctSortedList));
+
+		// Add the transitive closure FDs list and the combined list to the model for results page access
+		model.addAttribute("allFdStringsToShow", distinctSortedList); // Combined list
+		model.addAttribute("transitiveFdStrings", transitiveFdStrings); // Only Transitive FDs for coloring
+
+		model.addAttribute("inputData", safeManual);
+		model.addAttribute("fdList", safeFds);
+
+		// Return results page
+		return "calc-results";
 	}
 
 	// Convert(and parsing) a string like "A->B;C->D;E->F,G" to List<FD>
@@ -157,46 +198,5 @@ public class ComputeController {
 			}
 		}
 		return result;
-	}
-
-	// Helpers for FD closure-list generation
-	private String normalizeFd(String s) {
-		if (s == null) return "";
-		String t = s.replace('→', '-').replaceAll("-+>", "->").trim();
-		t = t.replaceAll("\\s*,\\s*", ",");    // remove spaces around commas
-		t = t.replaceAll("\\s+", " ");         // normalize inner spaces
-		return t;
-	}
-
-	// Returns a list by adding closure calculation to user FDs
-	private String buildFdListWithClosure(String fds, List<FD> originalFDs, List<String> originalAttrOrder) {
-		List<String> user = new ArrayList<>();
-		if (fds != null && !fds.isBlank()) {
-			for (String p : fds.split(";")) {
-				String t = normalizeFd(p);
-				if (!t.isEmpty()) user.add(t);
-			}
-		}
-
-		LinkedHashSet<String> closureFds = new LinkedHashSet<>();
-		int n = originalAttrOrder.size();
-		for (int mask = 1; mask < (1 << Math.max(0, n)); mask++) {
-			LinkedHashSet<String> X = new LinkedHashSet<>();
-			for (int i = 0; i < n; i++) if ((mask & (1 << i)) != 0) X.add(originalAttrOrder.get(i));
-			Set<String> clos = fdService.computeClosure(X, originalFDs);
-			for (String a : clos) {
-				if (!X.contains(a) && originalAttrOrder.contains(a)) {
-					List<String> lhs = new ArrayList<>(X);
-					Collections.sort(lhs);
-					String fdStr = String.join(",", lhs) + "->" + a;
-					closureFds.add(fdStr);
-				}
-			}
-		}
-
-		LinkedHashSet<String> merged = new LinkedHashSet<>();
-		merged.addAll(user);
-		merged.addAll(closureFds);
-		return String.join(";", merged);
 	}
 }

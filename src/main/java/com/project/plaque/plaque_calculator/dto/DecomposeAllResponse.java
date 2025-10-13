@@ -3,9 +3,8 @@ package com.project.plaque.plaque_calculator.dto;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Response for /decompose-all: per-table DecomposeResponse objects plus global dp/lj booleans
- */
+
+ // Response for /decompose-all: per-table DecomposeResponse objects plus global dp/lj booleans
 public class DecomposeAllResponse {
 	private double[][] globalRic;
 	private List<DecomposeResponse> tableResults;
@@ -16,6 +15,7 @@ public class DecomposeAllResponse {
 	private List<String> globalManualRows = new ArrayList<>();
 	//  order used to build globalManualRows / globalRic columns
 	private List<Integer> unionCols = new ArrayList<>();
+	private boolean isBCNFDecomposition;
 
 
 
@@ -41,5 +41,11 @@ public class DecomposeAllResponse {
 
 	public List<Integer> getUnionCols() { return unionCols; }
 	public void setUnionCols(List<Integer> unionCols) { this.unionCols = unionCols == null ? new ArrayList<>() : unionCols; }
+
+	public boolean isBCNFDecomposition() {
+		return isBCNFDecomposition;
+	}public void setBCNFDecomposition(boolean BCNFDecomposition) {
+		isBCNFDecomposition = BCNFDecomposition;
+	}
 }
 

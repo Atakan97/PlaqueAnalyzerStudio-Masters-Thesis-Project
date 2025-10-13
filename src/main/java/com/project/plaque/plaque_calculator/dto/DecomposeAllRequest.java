@@ -2,10 +2,9 @@ package com.project.plaque.plaque_calculator.dto;
 
 import java.util.List;
 
-/**
- * Wrapper request to submit multiple DecomposeRequest objects (one per decomposed table).
- * We reuse DecomposeRequest for per-table options (columns, manualData, flags).
- */
+
+ // Wrapper request to submit multiple DecomposeRequest objects (one per decomposed table)
+ // Reuse DecomposeRequest for per-table options (columns, manualData, flags).
 public class DecomposeAllRequest {
 	private List<DecomposeRequest> tables;
 	// optional global flags

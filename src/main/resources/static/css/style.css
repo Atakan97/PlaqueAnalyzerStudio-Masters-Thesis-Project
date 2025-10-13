@@ -31,6 +31,30 @@ h2 {
     border-bottom: 2px solid #e2e8f0;
     padding-bottom: 10px;
 }
+.input-container {
+    display: flex;
+    gap: 30px;
+    width: 100%;
+    max-width: 1200px;
+    margin-bottom: 20px;
+}
+
+.input-column {
+    flex: 1;
+    min-width: 650px;
+}
+
+/* --- Manual data table horizontal scroll --- */
+.table-scroll-wrapper {
+    overflow-x: auto;
+    width: 100%;
+    margin-top: 15px;
+}
+
+.table-scroll-wrapper .data-grid {
+    margin-top: 0;
+    min-width: max-content;
+}
 
 /* Tab bar settings */
 .tab-bar {
@@ -72,6 +96,7 @@ h2 {
     margin-top: 15px;
     margin-bottom: 30px;
     border: 1px solid #e2e8f0;
+    box-sizing: border-box;
 }
 
 /* File upload style section */
@@ -124,12 +149,9 @@ input[type="file"]::file-selector-button:hover {
     font-size: 0.9em;
 }
 .preview th {
-    background-color: #e2e8f0;
+    background-color: #475569;
     font-weight: 600;
-    color: #475569;
-}
-.preview tr:nth-child(even) {
-    background-color: #f1f5f9;
+    color: white;
 }
 .preview a {
     color: #3b82f6;
@@ -148,7 +170,6 @@ input[type="file"]::file-selector-button:hover {
     margin-top: 15px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
-    overflow: hidden;
 }
 .data-grid th, .data-grid td {
     padding: 10px 15px;
@@ -168,9 +189,13 @@ input[type="file"]::file-selector-button:hover {
     font-weight: 600;
     text-transform: uppercase;
     font-size: 0.85em;
+    position: relative;
+}
+.data-grid td {
+    background-color: #f1f5f9;
 }
 .data-grid td[contenteditable] {
-    background-color: #f8fafc;
+    background-color: #f1f5f9;
     border: 1px solid #cbd5e1;
     border-radius: 4px;
     min-width: 80px;
@@ -183,24 +208,63 @@ input[type="file"]::file-selector-button:hover {
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
     outline: none;
 }
+
+.data-grid tr {
+    background-color: #f1f5f9 !important;
+}
+
 .data-grid tr:nth-child(even) {
-    background-color: #f1f5f9;
+    background-color: #f1f5f9; !important;
+}
+.column-controls {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background-color: #f8fafc;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+.column-controls label {
+    font-weight: 500;
+}
+.small-input {
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 1em;
+    width: 60px;
 }
 
 /* Adjusting small action buttons (+ Add Row, + Add FD, ×) */
 .small {
-    background-color: #3b82f6;
+    background-color: #4f46e5;
+    font-weight: 600;
     color: white;
     border: none;
     padding: 8px 15px;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 0.9em;
     margin-top: 15px;
-    transition: background-color 0.3s ease;
+
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
 }
 .small:hover {
-    background-color: #2563eb;
+    background-color: #4338ca;
+    box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+.small:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.column-controls .small {
+    margin-top: 0;
 }
 
 /* For manual data deletion button */
@@ -214,15 +278,17 @@ input[type="file"]::file-selector-button:hover {
     font-size: 1.1em;
     font-weight: bold;
     line-height: 1;
-    transition: background-color 0.3s ease;
     display: inline-flex;
     justify-content: center;
     align-items: center;
     width: 28px;
     height: 28px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
 }
 .delFd:hover, .delManualRow:hover {
     background-color: #dc2626;
+    transform: scale(1.1);
 }
 
 /* Hint text */
@@ -236,19 +302,19 @@ input[type="file"]::file-selector-button:hover {
     border-radius: 6px;
 }
 
-/* Calculation options section */
+/* Calculation options section (Monte Carlo approximation option) */
 .options {
-    background-color: #ffffff;
-    padding: 25px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    margin-top: 30px;
-    margin-bottom: 30px;
+
+    border: 1px solid #e0e7ff;
+    background-color: #f7f9fc;
+    border-radius: 6px;
+    margin: 20px 0;
+
     display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    align-items: center;
-    border: 1px solid #e2e8f0;
+    justify-content: center;
+    gap: 30px;
+    padding: 15px;
+    width: 100%;
 }
 .options label {
     display: flex;
@@ -287,24 +353,30 @@ input[type="file"]::file-selector-button:hover {
 .compute-btn {
     background-color: #22c55e;
     color: white;
-    padding: 18px 35px;
-    font-size: 1.4em;
-    font-weight: 600;
+    padding: 12px 25px;
+    font-size: 1.1em;
+    font-weight: 700;
     border: none;
     border-radius: 10px;
     cursor: pointer;
     width: 100%;
-    display: flex;
+    display: block;
+    max-width: 300px;
+    margin: 20px auto;
     justify-content: center;
     align-items: center;
     gap: 10px;
-    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
-    box-shadow: 0 5px 15px rgba(34, 197, 94, 0.3);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 10px 15px -3px rgba(34, 197, 94, 0.3), 0 4px 6px -4px rgba(34, 197, 94, 0.1);
 }
 .compute-btn:hover {
     background-color: #16a34a;
+    box-shadow: 0 15px 20px -5px rgba(34, 197, 94, 0.4), 0 6px 8px -6px rgba(34, 197, 94, 0.15);
     transform: translateY(-2px);
-    box-shadow: 0 7px 20px rgba(34, 197, 94, 0.4);
+}
+.compute-btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 .compute-btn:disabled {
     background-color: #94a3b8;
@@ -367,6 +439,55 @@ input[type="file"]::file-selector-button:hover {
 /* Color settings of the cell with plaque */
 .plaque-cell {
     color: inherit !important;
+}
+/* Show Transitive Closure FDs button positioning */
+#showClosureBtn {
+    display: block;
+    margin-top: 20px;
+    margin-left: auto;
+    margin-right: auto;
+}
+/* Center the FD list section on calc-results page */
+#fdListSection {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto 10px auto;
+}
+
+#fdListSection h3 {
+    margin-bottom: 15px;
+}
+
+#fdListUl {
+    padding: 0;
+    display: inline-block;
+    text-align: left;
+
+}
+
+.return-to-input-form {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 100;
+    margin: 0 !important;
+}
+
+/* Side-by-side tables for calc-results page */
+.tables-side-by-side {
+    display: flex;
+    gap: 100px;
+    align-items: flex-start;
+    margin-top: 20px;
+}
+
+.tables-side-by-side .table-wrapper {
+    flex: 1;
+    min-width: 0;
+}
+
+.tables-side-by-side .data-grid {
+    width: 100%;
 }
 
 /* Responsive Adjustments */
@@ -450,18 +571,19 @@ input[type="file"]::file-selector-button:hover {
 
 /* Make the overall container style for normalization page the same as the main page */
 .normalization-container {
+    max-width: 98vw;
     background-color: #ffffff;
-    padding: 30px 40px;
+    padding: 20px;
     border-radius: 12px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    max-width: 900px;
-    width: 100%;
-    margin: 40px auto;
+    width: 98%;
+    margin: 0 auto;
+    box-sizing: border-box;
 }
 .normalization-container h2 {
     margin-top: 0;
 }
-/* normalizationSteps.jsp: Aligning the title and timer side by side */
+/* Aligning the title and timer side by side */
 .norm-header {
     display: flex;
     align-items: center;
@@ -494,13 +616,102 @@ input[type="file"]::file-selector-button:hover {
     align-items: flex-start;
     gap: 1rem;
 }
-#fdListContainer {
+
+/* Column delete button (For decomposed tables) */
+.delete-col-btn {
+    background-color: #ef4444;
+    color: white;
+    border: none;
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    font-weight: bold;
+    line-height: 1;
+    transition: background-color 0.2s ease;
+
+    /* Positioning */
     position: absolute;
-    top: -5rem;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+
+    z-index: 10;
+    opacity: 0.9;
+}
+
+.delete-col-btn:hover {
+    background-color: #dc2626;
+    opacity: 1;
+}
+
+
+/* Style for check decomposition button */
+.decomposition-controls {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+#checkDecompositionBtn {
+    background-color: #3b82f6;
+    color: white;
+}
+
+#checkDecompositionBtn:hover {
+    background-color: #2563eb;
+}
+
+/* For general action buttons on the normalization page */
+.global-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+    justify-content: flex-end;
+    width: 100%;
+}
+
+/* Flexbox design for normalization page */
+.main-normalization-flex {
+    display: flex;
+    gap: 25px;
+    align-items: flex-start;
+    margin-bottom: 25px;
+}
+
+.original-table-wrapper {
+    flex: 1;
+    min-width: 400px;
+}
+
+/* Change layout to bottom-to-bottom for small screens (Responsive) */
+@media (max-width: 850px) {
+    .main-normalization-flex {
+        flex-direction: column;
+    }
+    #fdListContainer {
+        width: 100%;
+    }
+}
+
+#fdListContainer {
+    flex-shrink: 0;
+    width: 300px;
     right: 0;
-    width: 240px;
-    max-height: 90px;
-    overflow-y: auto;
+    max-height: none;
+    overflow-y: hidden;
+    overflow: hidden;
+
+    /* View Styles */
     background: #f9f9f9;
     border: 1px solid #ddd;
     padding: 0.5rem;
@@ -551,16 +762,19 @@ input[type="file"]::file-selector-button:hover {
 }
 #decomposedTablesContainer {
     display: flex;
-    flex-wrap: wrap;    /
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 20px;
 }
 .decomposed-wrapper {
-    flex: 0 0 32%;
+    flex: 0 0 calc(25% - 9px);
+    min-width: 200px;
     background: #fff;
     border: 1px solid #ddd;
     padding: 1rem;
     box-sizing: border-box;
 }
+
 .compute-ric-btn {
     margin-top: 0.5rem;
     background-color: #28a745;
@@ -577,13 +791,13 @@ input[type="file"]::file-selector-button:hover {
     margin-top: 0.5rem; font-size: 0.95rem;
 }
 .decompose-warnings .warning {
-    color: #b06a00; /* amber */
+    color: #b06a00;
 }
 .decompose-warnings .error   {
-    color: #c12a2a; font-weight: bold; /* red */
+    color: #c12a2a; font-weight: bold;
 }
 .decompose-warnings .ok      {
-    color: #1b8e3b; /* green */
+    color: #1b8e3b;
 }
 /* show-fds button small spacing */
 .show-fds-btn {
@@ -645,14 +859,24 @@ input[type="file"]::file-selector-button:hover {
     padding: 0.45rem 0.9rem;
     border-radius: 6px;
     border: 1px solid rgba(0,0,0,0.08);
-    background: #2b6cb0;
+    background: #3b82f6;
     color: white;
     cursor: pointer;
     font-size: 0.95rem;
     margin: 0.25rem;
     transition: opacity .15s ease, transform .08s ease;
 }
-.button:hover { opacity: 0.94; transform: translateY(-1px); }
+.button:hover
+{
+    background-color: #4338ca;
+    box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+.button:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
 
 .compute-all-btn {
     background: #2f855a;
@@ -685,11 +909,6 @@ input[type="file"]::file-selector-button:hover {
 .label.warn { background:#fffbeb; color:#7c2d12; border:1px solid #fde68a; }
 .label.err { background:#fff1f2; color:#831843; border:1px solid #fecaca; }
 
-@media (max-width: 900px) {
-    #decomposedTablesContainer { flex-direction: column; gap: .8rem; }
-    .decomposed-wrapper { flex: 1 1 100%; }
-}
-
 .remove-table-btn {
     background-color: #ef4444;
     color: white;
@@ -709,6 +928,75 @@ input[type="file"]::file-selector-button:hover {
 .decomposed-wrapper .small {
     margin-right: 10px;
 }
+
+/* When originalTableContainer is used to host decomposed-wrapper items,
+   show those wrappers side-by-side with gap and responsive wrap */
+#originalTableContainer.orig-as-decomposed-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+/* Width of each wrapper when placed inside originalTableContainer */
+#originalTableContainer.orig-as-decomposed-row .decomposed-wrapper {
+    flex: 0 0 48%;
+    box-sizing: border-box;
+    margin: 0;
+}
+
+.decomposed-wrapper.orig-as-original h3 {
+    display: none;
+}
+.decomposed-wrapper.orig-as-original .add-table-local,
+.decomposed-wrapper.orig-as-original .remove-table-btn {
+    display: none;
+}
+.decomposed-footer-controls {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 0.75rem;
+}
+.decomposed-footer-controls .small {
+    padding: 6px 10px;
+    font-size: 0.88rem;
+}
+
+#decomposedTablesContainer .decomposed-wrapper.orig-as-original {
+    margin: 1.5rem;
+}
+
+/* Student Logout Button Style */
+.student-logout-button {
+    /* Positioning */
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+
+    /* Appearance */
+    background-color: #f97316;
+    color: white;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease;
+}
+
+.student-logout-button:hover {
+    background-color: #ea580c;
+}
+
+
+
+
+
 
 
 

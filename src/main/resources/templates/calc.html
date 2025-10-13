@@ -4,175 +4,239 @@
   <meta charset="UTF-8" />
   <title>Plaque Calculator</title>
   <link rel="stylesheet" th:href="@{/css/style.css}" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
 </head>
 <body>
 
 <h1>PlaqueCalculator</h1>
-<h2>Input & Parameters</h2>
 
 <form id="calcForm"
       th:action="@{/compute}"
       method="post"
       enctype="multipart/form-data">
-  <!-- Tab Bar for Data Input -->
-  <div class="tab-bar">
-    <button type="button" id="tab-upload" class="tab active">Upload CSV</button>
-    <button type="button" id="tab-manual" class="tab">Enter Manual Data</button>
-  </div>
 
-  <!-- CSV Section -->
-  <div id="section-upload" class="tab-content">
-    <input type="file" id="csvfile" name="csvfile" accept=".csv" />
-    <div class="preview">
-      <small>Preview (first 5 rows):</small>
-      <table id="csvPreview"><thead></thead><tbody></tbody></table>
-      <a href="#" id="showMoreCsv">Show more…</a>
+  <div class="input-container">
+
+    <div class="input-column">
+      <h2>Input & Parameters</h2>
+
+      <div class="tab-bar">
+        <button type="button" id="tab-upload" class="tab active">Upload CSV & Enter Manual Data</button>
+      </div>
+
+      <div id="section-upload" class="tab-content">
+        <input type="file" id="csvfile" name="csvfile" accept=".csv" />
+
+        <hr style="margin: 15px 0; border: 0; border-top: 1px solid #ccc;"> <div id="manual-data-controls">
+        <div class="column-controls">
+          <label for="columnCountInput">Number of Columns:</label>
+          <input type="number" id="columnCountInput" value="3" min="1" max="20" class="small-input">
+          <button type="button" id="updateColumnsBtn" class="small">Update Table</button>
+        </div>
+        <div class="table-scroll-wrapper">
+          <table id="manualDataTable" class="data-grid">
+            <thead>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <button type="button" id="addRow" class="small">+ Add Row</button>
+        <div class="hint">Please use tabular format. Column names in the first row.</div>
+      </div>
+
+      </div>
+    </div>
+
+    <div class="input-column">
+      <h2>Functional Dependencies List</h2>
+
+      <div class="tab-bar">
+        <button type="button" id="tab-fd-manual" class="tab active">Upload FD File & Enter Manually</button>
+      </div>
+
+      <div id="fd-manual" class="tab-content">
+        <div id="fd-upload-content">
+          <input type="file" name="fdfile" id="fdfile" accept=".txt,.csv" />
+          <small>Please enter one FD per line, format: X→Y</small>
+        </div>
+
+        <hr style="margin: 15px 0; border: 0; border-top: 1px solid #ccc;">
+
+        <button type="button" id="addFdBtn" class="small">+ Add FD</button>
+        <div class="table-scroll-wrapper">
+          <table id="fdTable" class="data-grid">
+            <thead><tr><th>#</th><th>X</th><th>→</th><th>Y</th><th>Del</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
-
-  <!-- Manual Section -->
-  <div id="section-manual" class="tab-content" style="display:none">
-    <table id="manualTable" class="data-grid">
-      <thead>
-      <tr><th>Col1</th><th>Col2</th><th>Col3</th><th>Del</th></tr>
-      </thead>
-      <tbody>
-      <tr>
-        <td contenteditable></td>
-        <td contenteditable></td>
-        <td contenteditable></td>
-        <td><button type="button" class="delManualRow">×</button></td>
-      </tr>
-      </tbody>
-    </table>
-    <button type="button" id="addRow" class="small">+ Add Row</button>
-    <div class="hint">Please use tabular format. Column names in the first row.</div>
-  </div>
-
-  <h2>Functional Dependencies List</h2>
-  <!-- FD Tabs -->
-  <div class="tab-bar">
-    <button type="button" id="tab-fd-manual" class="tab active">Enter FD Manually</button>
-    <button type="button" id="tab-fd-upload" class="tab">Upload FD File</button>
-  </div>
-  <div id="fd-manual" class="tab-content">
-    <button type="button" id="addFdBtn" class="small">+ Add FD</button>
-    <table id="fdTable" class="data-grid">
-      <thead><tr><th>#</th><th>X</th><th>→</th><th>Y</th><th>Del</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
-  <div id="fd-upload" class="tab-content" style="display:none">
-    <input type="file" name="fdfile" id="fdfile" accept=".txt,.csv" />
-    <small>Please enter one FD per line, format: X→Y</small>
-    <div class="preview">
-      <table id="fdPreview" class="data-grid">
-        <thead><tr><th>X</th><th>→</th><th>Y</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <a href="#" id="showMoreFd">Show more…</a>
-    </div>
-  </div>
-
-  <!-- Calculation Options -->
   <div class="options">
-    <label><input type="checkbox" id="mcCheckbox" name="monteCarlo" /> Use Monte Carlo Approximation</label>
-    <label># of Samples: <input type="number" id="samples" name="samples" value="50000" disabled /></label>
-  </div>
+  <label><input type="checkbox" id="mcCheckbox" name="monteCarlo" /> Use Monte Carlo Approximation</label>
+  <label># of Samples: <input type="number" id="samples" name="samples" value="50000" disabled /></label>
+</div>
 
-  <!-- Hidden fields -->
   <input type="hidden" name="manualData" id="manualData" />
   <input type="hidden" name="fds"        id="fdsInput" />
 
-  <!-- Compute Button-->
   <button type="submit" id="computeBtn" class="compute-btn">Compute Plaque</button>
 </form>
 
-<!-- Input Data section -->
-<div th:if="${inputData != null}">
-  <h3>Input Data:</h3>
-  <table class="data-grid">
-    <thead>
-    <tr>
-      <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
-          th:text="${i}"></th>
-    </tr>
-    </thead>
-    <tbody>
-    <tr th:each="row : ${inputData.split(';')}">
-      <td th:each="cell : ${row.split(',')}"
-          th:text="${cell}">val</td>
-    </tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- Functional dependencies list section -->
-<div th:if="${fdList != null and fdList != ''}">
-  <h3>Functional Dependencies:</h3>
-  <ul>
-    <li th:each="fd : ${fdList.split(';')}" th:text="${fd}">X->Y</li>
-  </ul>
-</div>
-
-<!-- If the compute was successful, two table under the “Calculation Results” header -->
-<div th:if="${ricMatrix != null}">
-  <h3>Calculation Results:</h3>
-
-  <!-- Initial Calculation Table -->
-  <table id="initialCalcTable" class="data-grid">
-    <thead>
-    <tr>
-      <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
-          th:text="${i}"></th>
-    </tr>
-    </thead>
-    <tbody>
-    <tr th:each="row, rsStat : ${inputData.split(';')}">
-      <td th:each="cell, csStat : ${row.split(',')}"
-          th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
-          th:text="${cell}">val</td>
-    </tr>
-    </tbody>
-  </table>
-
-  <!-- Relational information content table, hidden initially -->
-  <table id="ricTable" class="data-grid" style="display:none">
-    <thead>
-    <tr>
-      <th th:each="i : ${#numbers.sequence(1, ricColCount)}"
-          th:text="${i}"></th>
-    </tr>
-    </thead>
-    <tbody>
-    <tr th:each="row : ${ricMatrix}">
-      <td th:each="cell : ${row}"
-          th:classappend="${cell != '1' and cell != '1.0'} ? 'plaque-cell' : ''"
-          th:text="${cell}"></td>
-    </tr>
-    </tbody>
-  </table>
-
-  <!-- Buttons that change between tables -->
-  <button id="showCalcBtn" type="button" class="small">
-    Show Information Contents
-  </button>
-  <button id="returnBtn" type="button" class="small" style="display:none">
-    Return to Input
-  </button>
-
-  <!-- Going for normalization page section -->
-  <form th:action="@{/normalization}" method="get" class="start-normalize-form">
-    <button type="submit" class="small">Start Normalization</button>
-  </form>
-</div>
-
-<!-- Giving ricMatrix directly with Inline JS -->
+<script th:src="@{/js/main.js}"></script>
 <script th:inline="javascript">
   /*<![CDATA[*/
-  window.ricMatrix = /*[[${ricMatrix}]]*/ [];
+  // Retrieve data to restore from Thymeleaf
+  const restoredInputData = /*[[${restoredInputData}]]*/ null;
+  const restoredFdList = /*[[${restoredFdList}]]*/ null;
   /*]]>*/
+
+
+  document.addEventListener('DOMContentLoaded', () => {
+    let dataRestored = false;
+    let fdRestored = false;
+
+    // Restore data and FDs
+    if (restoredInputData && restoredInputData.trim() !== "") {
+      restoreManualTable(restoredInputData);
+      dataRestored = true;
+    }
+    if (restoredFdList && restoredFdList.trim() !== "") {
+      restoreFDTable(restoredFdList);
+      fdRestored = true;
+    }
+
+    // Set table visibility
+    // If a restore is done, activate the correct tab
+    if (dataRestored) {
+      // Ensuring it's active as it's a single tab
+      const tabUpload = document.getElementById('tab-upload');
+      if (tabUpload) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tabUpload.classList.add('active');
+      }
+    }
+
+    if (fdRestored) {
+      // Manually activate the Enter FD Manually tab (id: tab-fd-manual) and show the section
+      const tabFdManual = document.getElementById('tab-fd-manual');
+      const sectionFdManual = document.getElementById('fd-manual');
+      if (tabFdManual && sectionFdManual) {
+        // Remove active class from FD tabs
+        document.querySelectorAll('.tab').forEach(t => {
+          if (t.id.startsWith('tab-fd-')) {
+            t.classList.remove('active');
+          }
+        });
+        // Activate the FD Manual tab
+        tabFdManual.classList.add('active');
+        sectionFdManual.style.display = 'block';
+        // Hide FD Upload
+        document.getElementById('fd-upload').style.display = 'none';
+      }
+    }
+  });
+
+  // Restoration functions with full DOM recreation logic
+  // Manual Data Table Filling Function
+  function restoreManualTable(dataString) {
+    const rows = dataString.split(';');
+    if (rows.length < 1) return;
+
+    const manualDataTable = document.getElementById('manualDataTable');
+    const tbody = manualDataTable.querySelector('tbody');
+    const thead = manualDataTable.querySelector('thead');
+    const columnCountInput = document.getElementById('columnCountInput');
+
+    // Update number of columns
+    const columnCount = rows[0].split(',').length;
+    if (columnCountInput) {
+      columnCountInput.value = columnCount;
+    }
+
+    // Rebuild header (following the updateManualTable logic in main.js)
+    if (thead) {
+      thead.innerHTML = '';
+      const headerRow = thead.insertRow();
+
+      for (let i = 0; i < columnCount; i++) {
+        const th = document.createElement('th');
+        th.textContent = i + 1; // 1, 2, 3...
+        headerRow.appendChild(th);
+      }
+      const delTh = document.createElement('th');
+      delTh.textContent = 'Del';
+      headerRow.appendChild(delTh);
+    }
+
+    // Fill Body
+    while(tbody.firstChild) {
+      tbody.removeChild(tbody.firstChild);
+    }
+
+    // Data rows (Skip header row)
+    for (let i = 0; i < rows.length; i++) {
+      const rowString = rows[i];
+      const newRow = tbody.insertRow();
+      const cells = rowString.split(',');
+
+      cells.forEach((cellValue) => {
+        const newCell = newRow.insertCell();
+        newCell.setAttribute('contenteditable', 'true');
+        newCell.textContent = cellValue;
+      });
+
+      // Add row delete button
+      const deleteCell = newRow.insertCell();
+      deleteCell.innerHTML = '<button type="button" class="delManualRow">×</button>';
+    }
+  }
+
+  // FD List Filling Function
+  function restoreFDTable(fdString) {
+    const fds = fdString.split(';');
+    const fdTableBody = document.querySelector('#fdTable tbody');
+
+    if (!fdTableBody) return;
+
+    // Clear existing FDs
+    fdTableBody.innerHTML = '';
+
+    // If there is no FD to restore, add a blank line
+    if (!fdString || fdString.trim() === '' || fds.length === 0) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+            <td>1</td>
+            <td contenteditable></td>
+            <td>→</td>
+            <td contenteditable></td>
+            <td><button type="button" class="delFd">×</button></td>
+        `;
+      fdTableBody.appendChild(tr);
+      return;
+    }
+
+    fds.forEach((fd, index) => {
+      const parts = fd.split('->');
+      if (parts.length !== 2) return;
+
+      const left = parts[0];
+      const right = parts[1];
+
+      const newRow = fdTableBody.insertRow();
+      newRow.innerHTML = `
+          <td>${index + 1}</td>
+          <td contenteditable>${left}</td>
+          <td>→</td>
+          <td contenteditable>${right}</td>
+          <td><button type="button" class="delFd">×</button></td>
+        `;
+    });
+  }
 </script>
-<script th:src="@{/js/main.js}"></script>
+<a th:href="@{/logout}" class="student-logout-button">Logout</a>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </body>
 </html>

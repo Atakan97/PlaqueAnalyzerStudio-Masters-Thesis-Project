@@ -17,7 +17,6 @@ import java.util.stream.Collectors;
  * RicService: Computing relational information content(ric) matrix
  * - computeRic(columns, session) : Uses the initial/original table in the session
  * - computeRicFromManualData(manualData) : Uses the manualData string directly from the frontend
- *
  * Uses ProcessBuilder to call external relational_information_content jar.
  */
 @Service

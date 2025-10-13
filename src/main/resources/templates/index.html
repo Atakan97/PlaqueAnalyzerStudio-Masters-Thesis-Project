@@ -15,7 +15,7 @@
       margin: 0;
       background-color: #f0f4f8;
       color: #334155;
-      overflow: hidden;
+      overflow-y: auto;
     }
     .container {
       text-align: center;
@@ -59,14 +59,62 @@
     .start-button:active {
       transform: translateY(0);
     }
+    /* Login form styles */
+    .login-form-container {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .form-group {
+      margin-bottom: 15px;
+      text-align: left;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 700;
+      color: #475569;
+      font-size: 1.1em;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Welcome to PlaqueCalculatorApp!</h1>
-    <p>Application that calculates relation information content values, shows plaque and processes normalization steps.</p>
-    <!-- Processing with Thymeleaf -->
-    <a th:href="@{/calc}" class="start-button">Start Calculation</a>
+<div class="container">
+  <h1>Welcome to PlaqueCalculatorApp</h1>
+  <p>Calculates relation information content values, shows plaque and processes normalization steps.</p>
+
+  <div class="start-app-section">
+    <a th:href="@{/calc}" class="start-button">
+      Start the Application
+    </a>
   </div>
+  <hr style="margin-top: 30px; margin-bottom: 30px; border-color: #cbd5e1;">
+
+  <div class="admin-login-container">
+    <h2>Admin Login</h2>
+
+    <p th:if="${adminError}" style="color: red; font-weight: bold;" th:text="${adminError}"></p>
+
+    <form action="/admin/login" method="post">
+      <div class="form-group">
+        <label for="adminUsername">Username:</label>
+        <input type="text" id="adminUsername" name="adminUsername" required>
+      </div>
+      <div class="form-group">
+        <label for="adminPassword">Password:</label>
+        <input type="password" id="adminPassword" name="adminPassword" required>
+      </div>
+      <button type="submit" class="start-button" style="background-color: #ef4444;">Admin Login</button>
+    </form>
+  </div>
+</div>
 </body>
 </html>

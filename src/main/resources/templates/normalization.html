@@ -4,49 +4,91 @@
   <meta charset="UTF-8">
   <title>Normalization Tool</title>
   <link rel="stylesheet" th:href="@{/css/style.css}" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
 
   <script th:inline="javascript">
     /*<![CDATA[*/
     window.originalTable   = /*[[${initialCalcTableJson}]]*/ [];
     window.ricMatrixTable  = /*[[${ricJson}]]*/ [];
-    console.log("⚙️ initialCalcTable =", window.originalTable);
-    console.log("⚙️ ricMatrixTable  =", window.ricMatrixTable);
+    window.currentRelationsManual = /*[[${currentRelationsManualJson}]]*/ [];
+    window.currentRelationsColumns = /*[[${currentRelationsColumnsJson}]]*/ [];
+    window.currentRelationsFds = /*[[${currentRelationsFdsJson}]]*/ [];
+    window.currentUnionCols = /*[[${currentUnionColsJson}]]*/ [];
+    window.currentGlobalManualRows = /*[[${currentGlobalManualRowsJson}]]*/ [];
+    window.currentGlobalRic = /*[[${currentGlobalRicJson}]]*/ [];
+    window.normalizationStartTimeMs = /*[[${normalizationStartTimeMs}]]*/ null;
     /*]]>*/
   </script>
 
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
   <script defer th:src="@{/js/normalize.js}"></script>
 </head>
 <body>
 <div class="normalization-container">
+
   <div class="norm-header">
     <h2>Normalization Assistant</h2>
+    <a th:if="${canReturn}" th:href="@{/normalize/previous}" class="button return-previous-btn">
+      Return to Previous Step
+    </a>
   </div>
 
-  <h3>Original Table:</h3>
-  <div class="orig-with-add">
-    <div id="originalTableContainer"></div>
+  <div class="main-normalization-flex">
 
-    <div class="add-table-container">
-      <button id="addTable" class="button">+ Add Table</button>
+    <div class="original-table-wrapper">
+      <h3>Original Table:</h3>
+      <div id="originalTableContainer"></div>
     </div>
 
-    <!-- FD list positioned top-right -->
     <div id="fdListContainer" th:if="${fdItems.size()} > 0">
-      <h3>Functional Dependencies</h3>
-      <ul>
+
+      <button id="showClosureNormBtn"
+              th:if="${transitiveFdStrings != null and !transitiveFdStrings.isEmpty()}"
+              class="small"
+              style="margin-bottom: 10px;">Show Transitive Closure FDs</button>
+
+      <h4>Functional Dependencies</h4>
+      <ul id="fdListUl">
         <li th:each="fd : ${fdItems}"
             th:text="${fd}"
             th:classappend="${fdInferred.contains(fd)} ? 'inferred' : ''">
         </li>
       </ul>
     </div>
+
+  </div> <div class="orig-with-add">
+  <div class="global-actions">
+    <button id="addTable" class="button">+ Add Decomposed Table</button>
+
+    <button type="button" id="checkDecompositionBtn" class="button">Check Decomposition</button>
+    <button type="button" id="changeDecompositionBtn" class="button" style="display:none">Change Decomposition</button>
+
+  </div>
+</div>
+
+  <div id="decomposedTablesContainer"></div>
+
+  <div id="dpLjStatusBox" style="display:none; margin:18px 0; padding:12px; border-radius:6px; background:#fbfbfb; border:1px solid #ddd;">
+    <div id="dpLjMessages" style="margin-bottom:8px"></div>
   </div>
 
-  <!-- Container for dynamic decomposed tables -->
-  <div id="decomposedTablesContainer"></div>
+  <div id="normalizationStepActions" style="text-align:right">
+    <button id="computeAllBtn" type="button" style="display:none" class="button compute-all-btn">Compute Plaque</button>
+    <button id="continueNormalizationBtn" type="button" style="display:none" class="small">Continue to Normalization</button>
+  </div>
 
   <div id="normalizedOutput"></div>
 </div>
+<script th:inline="javascript">
+  /*<![CDATA[*/
+  // Pulling the original FD list and only the transitive ones
+  window.fdItems = /*[[${fdItems}]]*/ [];
+  window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
+  // Incoming list for coloring
+  window.fdInferred = /*[[${fdInferred}]]*/ [];
+  /*]]>*/
+</script>
 </body>
 </html>

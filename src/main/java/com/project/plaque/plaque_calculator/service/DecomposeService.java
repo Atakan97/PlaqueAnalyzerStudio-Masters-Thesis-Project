@@ -29,11 +29,11 @@ public class DecomposeService {
 	public DecomposeResponse decompose(DecomposeRequest req, HttpSession session) {
 		System.out.println("DecomposeService.decompose: start");
 
-		// originalFDs list
+		// OriginalFDs list
 		List<FD> originalFDs = getOriginalFDsOrThrow(session);
 		System.out.println("DecomposeService: originalFDs = " + originalFDs);
 
-		// originalAttrOrder
+		// OriginalAttrOrder
 		List<String> originalAttrOrder = getOriginalAttrOrder(session);
 		System.out.println("DecomposeService: originalAttrOrder = " + originalAttrOrder);
 
@@ -63,7 +63,6 @@ public class DecomposeService {
 		System.out.println("DecomposeService: dependency-preserved = " + dpPreserved);
 
 		// Checking lossless-join
-		@SuppressWarnings("unchecked")
 		Set<String> originalAttrs = (Set<String>) session.getAttribute("originalAttrs");
 		if (originalAttrs == null) {
 			originalAttrs = new LinkedHashSet<>(originalAttrOrder);
@@ -83,12 +82,20 @@ public class DecomposeService {
 		double[][] ric;
 		if (req.getManualData() != null && !req.getManualData().isBlank()) {
 			System.out.println("DecomposeService: using manualData from request for RIC");
-			ric = ricService.computeRicFromManualData(req.getManualData());
+			// Use request FDs if provided (normalize arrows and whitespace)
+			String reqFds = req.getFds() == null ? "" : req.getFds();
+			reqFds = reqFds.replace("\u2192", "->").replace("→", "->")
+					.replaceAll("\\s*,\\s*", ",").replaceAll("\\s*->\\s*", "->")
+					.replaceAll("-+>", "->").trim();
+			if (reqFds.isEmpty()) {
+				ric = ricService.computeRicFromManualData(req.getManualData());
+			} else {
+				ric = ricService.computeRicFromManualData(req.getManualData(), reqFds);
+			}
 		} else {
 			System.out.println("DecomposeService: using session + columns for RIC");
 			ric = ricService.computeRic(cols, session);
 		}
-		System.out.println("DecomposeService: ric matrix computed: " + Arrays.deepToString(ric));
 
 		// FD strings
 		List<String> fdsStr = projected.stream()
@@ -106,7 +113,7 @@ public class DecomposeService {
 		System.out.println("DecomposeService.decomposeAll: start");
 		System.out.println("decomposeAll req fds = " + req.getFds());
 
-		// original FDs & attrs
+		// Original FDs & attrs
 		List<FD> originalFDs = getOriginalFDsOrThrow(session);
 		List<String> originalAttrOrder = getOriginalAttrOrder(session);
 
@@ -123,32 +130,18 @@ public class DecomposeService {
 			throw new IllegalStateException("No tables provided in request");
 		}
 
-		// snapshot current incoming tables into session history
-		pushDecompositionHistory(session, tables);
-
-		// union of all column indices (0-based)
+		// Union of all column indices (0-based)
 		LinkedHashSet<Integer> unionColIdx = new LinkedHashSet<>();
 		for (DecomposeRequest dr : tables) {
 			List<Integer> cols = dr.getColumns();
 			if (cols != null) unionColIdx.addAll(cols);
 		}
 
-		// Check for missing original columns
-		int totalCols = originalAttrOrder.size();
-		List<Integer> missing = new ArrayList<>();
-		for (int i = 0; i < totalCols; i++) {
-			if (!unionColIdx.contains(i)) missing.add(i);
-		}
-		if (!missing.isEmpty()) {
-			throw new IllegalStateException("Missing columns in decomposed tables: " +
-					missing.stream().map(Object::toString).collect(Collectors.joining(",")));
-		}
-
-		// deterministic ordered list of union columns
+		// Deterministic ordered list of union columns
 		List<Integer> unionColsSorted = new ArrayList<>(unionColIdx);
 		Collections.sort(unionColsSorted);
 
-		// top-level FDs (normalized)
+		// Top-level FDs (normalized)
 		String topFds = req.getFds();
 		if (topFds == null) topFds = "";
 		topFds = topFds.replace("\u2192", "->").replace("→", "->")
@@ -159,7 +152,7 @@ public class DecomposeService {
 		List<Set<String>> tableAttrSets = new ArrayList<>(tables.size());
 		for (DecomposeRequest dr : tables) {
 			List<Integer> cols = dr.getColumns() == null ? Collections.emptyList() : dr.getColumns();
-			// normalize indices (numbers)
+			// Normalize indices (numbers)
 			List<Integer> colsNum = cols.stream().map(n -> n == null ? -1 : n).collect(Collectors.toList());
 
 			LinkedHashSet<String> attrs = colsNum.stream()
@@ -169,10 +162,10 @@ public class DecomposeService {
 						}
 						return originalAttrOrder.get(i);
 					})
-					// preserves insertion
+					// Preserves insertion
 					.collect(Collectors.toCollection(LinkedHashSet::new));
 
-			// canonicalize by sorting attribute names
+			// Canonicalize by sorting attribute names
 			List<String> tmp = new ArrayList<>(attrs);
 			Collections.sort(tmp);
 			LinkedHashSet<String> canonical = new LinkedHashSet<>(tmp);
@@ -187,7 +180,7 @@ public class DecomposeService {
 		// Build global manual rows, prefer top-level manualData if provided
 		List<String> manualRowsList = new ArrayList<>();
 		if (req.getManualData() != null && !req.getManualData().isBlank()) {
-			// dedupe preserving order
+			// Dedupe preserving order
 			LinkedHashSet<String> set = new LinkedHashSet<>();
 			for (String part : req.getManualData().split(";", -1)) {
 				String p = part == null ? "" : part.trim();
@@ -195,7 +188,7 @@ public class DecomposeService {
 			}
 			manualRowsList.addAll(set);
 		} else {
-			// build from session originalTuples using unionColsSorted
+			// Build from session originalTuples using unionColsSorted
 			@SuppressWarnings("unchecked")
 			List<List<String>> originalTuples = (List<List<String>>) session.getAttribute("originalTuples");
 			if (originalTuples == null || originalTuples.isEmpty()) {
@@ -230,25 +223,31 @@ public class DecomposeService {
 		System.out.println("DecomposeService.decomposeAll: built manualData for global RIC = " + builtManual);
 		System.out.println("DecomposeService.decomposeAll: passing topFds = '" + topFds + "' to RicService");
 
-		// Compute global RIC, passing top-level fds if any)
+		// Compute global RIC, passing top-level fds if any
 		double[][] globalRic = ricService.computeRicFromManualData(builtManual, topFds);
 		if (globalRic == null) globalRic = new double[0][0];
 
 		// Per-table: project & minimize FDs (still return projected FD lists per table)
 		List<DecomposeResponse> perTableResponses = new ArrayList<>();
 		List<FD> combinedProjectedFds = new ArrayList<>();
+		boolean allTablesBCNF = true; // BCNF bayrağı başlatıldı
 
 		for (int i = 0; i < tables.size(); i++) {
 			Set<String> attrs = tableAttrSets.get(i);
 
 			// Project & minimize projected FDs for this table
 			List<FD> projected = projectFDsByClosure(attrs, originalFDs);
-			projected = minimizeLhsForFds(projected, originalFDs);
+			List<FD> minimizedProjected = minimizeLhsForFds(projected, originalFDs);
 
-			combinedProjectedFds.addAll(projected);
+			combinedProjectedFds.addAll(minimizedProjected);
+
+			// BCNF checking
+			if (!checkBCNF(attrs, originalFDs, fdService)) {
+				allTablesBCNF = false;
+			}
 
 			// Build response item with projected FDs only (no per-table dp/lj)
-			List<String> projectedStr = projected.stream().map(this::fdToString).collect(Collectors.toList());
+			List<String> projectedStr = minimizedProjected.stream().map(this::fdToString).collect(Collectors.toList());
 			DecomposeResponse drResp = new DecomposeResponse(new double[0][0], projectedStr);
 			perTableResponses.add(drResp);
 
@@ -280,6 +279,7 @@ public class DecomposeService {
 		allResp.setTableResults(perTableResponses);
 		allResp.setDpPreserved(dpPreservedGlobal);
 		allResp.setLjPreserved(ljPreservedGlobal);
+		allResp.setBCNFDecomposition(allTablesBCNF); // BCNF bayrağını set et
 
 		// set global RIC matrix and manual rows (for frontend mapping) and unionCols
 		allResp.setGlobalRic(globalRic);
@@ -290,28 +290,6 @@ public class DecomposeService {
 		return allResp;
 	}
 
-	// History / Undo helpers
-
-	 // Push a snapshot of the given tables (list of DecomposeRequest) into session history
-	 // Snapshot format: List<List<Integer>> (each inner list = columns list for a table)
-	private void pushDecompositionHistory(HttpSession session, List<DecomposeRequest> tables) {
-		if (tables == null) return;
-		List<List<Integer>> snapshot = new ArrayList<>();
-		for (DecomposeRequest dr : tables) {
-			if (dr == null || dr.getColumns() == null) snapshot.add(Collections.emptyList());
-			else snapshot.add(new ArrayList<>(dr.getColumns()));
-		}
-		String json = gson.toJson(snapshot);
-
-		@SuppressWarnings("unchecked")
-		List<String> history = (List<String>) session.getAttribute(HISTORY_SESSION_KEY);
-		if (history == null) history = new ArrayList<>();
-		history.add(json);
-
-		// No capping — keep full history
-		session.setAttribute(HISTORY_SESSION_KEY, history);
-	}
-	
 	// Helper methods
 	@SuppressWarnings("unchecked")
 	private List<FD> getOriginalFDsOrThrow(HttpSession session) {
@@ -406,76 +384,111 @@ public class DecomposeService {
 		return true;
 	}
 
-	// lossless join test
+	// Lossless-join test
 	private boolean checkLosslessDecomposition(Set<String> R, List<Set<String>> schemas, List<FD> originalFDs) {
-		if (R == null || R.isEmpty() || schemas == null || schemas.isEmpty()) return false;
-		List<String> attrs = new ArrayList<>(R);
-
-		List<FD> fds = new ArrayList<>();
-		for (FD fd : originalFDs) {
-			Set<String> lhs = new LinkedHashSet<>();
-			for (String a : fd.getLhs()) if (R.contains(a)) lhs.add(a);
-			Set<String> rhs = new LinkedHashSet<>();
-			for (String a : fd.getRhs()) if (R.contains(a)) rhs.add(a);
-			if (!lhs.isEmpty() && !rhs.isEmpty()) fds.add(new FD(lhs, rhs));
+		if (R == null || R.isEmpty() || schemas == null || schemas.isEmpty()) {
+			return false;
 		}
 
-		List<Map<String,String>> rows = new ArrayList<>();
-		for (int i = 0; i < schemas.size(); i++) {
-			Set<String> si = schemas.get(i);
-			Map<String,String> row = new LinkedHashMap<>();
-			for (String a : attrs) {
-				if (si.contains(a)) {
-					row.put(a, "A:" + a);
+		// Create the initial matrix
+		List<String> allAttributes = new ArrayList<>(R);
+		int numAttrs = allAttributes.size();
+		int numSchemas = schemas.size();
+		String[][] matrix = new String[numSchemas][numAttrs];
+
+		for (int i = 0; i < numSchemas; i++) {
+			Set<String> schema_i = schemas.get(i);
+			for (int j = 0; j < numAttrs; j++) {
+				String attr_j = allAttributes.get(j);
+				if (schema_i.contains(attr_j)) {
+					// Distinguished variable
+					matrix[i][j] = "a" + (j + 1);
 				} else {
-					row.put(a, "x_" + i + "_" + a);
+					// Non-distinguished variable
+					matrix[i][j] = "b" + (i + 1) + (j + 1);
 				}
 			}
-			rows.add(row);
 		}
 
-		boolean changed = true;
-		while (changed) {
+		// Apply Chase algorithm
+		boolean changed;
+		do {
 			changed = false;
-			for (FD fd : fds) {
+			for (FD fd : originalFDs) {
 				Set<String> lhs = fd.getLhs();
 				Set<String> rhs = fd.getRhs();
-				if (lhs == null || lhs.isEmpty() || rhs == null || rhs.isEmpty()) continue;
 
-				for (int p = 0; p < rows.size(); p++) {
-					Map<String,String> rowP = rows.get(p);
-					for (int q = 0; q < rows.size(); q++) {
-						Map<String,String> rowQ = rows.get(q);
-						boolean lhsEqual = true;
-						for (String a : lhs) {
-							String vp = rowP.get(a);
-							String vq = rowQ.get(a);
-							if (vp == null || vq == null || !vp.equals(vq)) { lhsEqual = false; break; }
+				// Find rows with the same LHS values
+				List<Integer> lhsIndices = lhs.stream()
+						.map(allAttributes::indexOf)
+						.collect(Collectors.toList());
+
+				if (lhsIndices.contains(-1)) {
+					continue;
+				}
+
+				Map<List<String>, List<Integer>> groups = new HashMap<>();
+				for (int i = 0; i < numSchemas; i++) {
+					List<String> key = new ArrayList<>();
+					for (int index : lhsIndices) {
+						key.add(matrix[i][index]);
+					}
+					groups.computeIfAbsent(key, k -> new ArrayList<>()).add(i);
+				}
+
+				for (List<Integer> rowIndices : groups.values()) {
+					if (rowIndices.size() < 2) continue;
+
+					// Equalize values ​​in RHS columns
+					for (String attr_y : rhs) {
+						int y_idx = allAttributes.indexOf(attr_y);
+						if (y_idx == -1) continue;
+
+						String distinguishedValue = null;
+						for (int rowIndex : rowIndices) {
+							if (matrix[rowIndex][y_idx].startsWith("a")) {
+								distinguishedValue = matrix[rowIndex][y_idx];
+								break;
+							}
 						}
-						if (!lhsEqual) continue;
-						for (String y : rhs) {
-							String vP = rowP.get(y);
-							String vQ = rowQ.get(y);
-							if (vP == null || vQ == null) continue;
-							if (!vP.equals(vQ)) {
-								rowQ.put(y, vP);
-								changed = true;
+
+						if (distinguishedValue != null) {
+							for (int rowIndex : rowIndices) {
+								if (!matrix[rowIndex][y_idx].equals(distinguishedValue)) {
+									matrix[rowIndex][y_idx] = distinguishedValue;
+									changed = true;
+								}
+							}
+						} else {
+							String firstValue = matrix[rowIndices.get(0)][y_idx];
+							for (int rowIndex : rowIndices) {
+								if (!matrix[rowIndex][y_idx].equals(firstValue)) {
+									matrix[rowIndex][y_idx] = firstValue;
+									changed = true;
+								}
 							}
 						}
 					}
 				}
 			}
-		}
+		} while (changed);
 
-		for (Map<String,String> r : rows) {
+		// Test and control the results
+		// If there is a row in the matrix including entirely of 'a' symbols, so it is lossless
+		for (int i = 0; i < numSchemas; i++) {
 			boolean allDistinguished = true;
-			for (String a : attrs) {
-				String v = r.get(a);
-				if (v == null || !v.equals("A:" + a)) { allDistinguished = false; break; }
+			for (int j = 0; j < numAttrs; j++) {
+				if (!matrix[i][j].startsWith("a")) {
+					allDistinguished = false;
+					break;
+				}
 			}
-			if (allDistinguished) return true;
+			if (allDistinguished) {
+				// Lossless join
+				return true;
+			}
 		}
-
+		// Lossy join
 		return false;
 	}
 
@@ -549,4 +562,58 @@ public class DecomposeService {
 		System.out.println("DecomposeService.projectFDsOnly: done -> " + resp);
 		return resp;
 	}
+
+	public boolean checkBCNF(Set<String> attributes, List<FD> allOriginalFds, FDService fdService) {
+		// Create the full set of FDs to be used for inclusion (F+ = Original + Transitive)
+		List<FD> transitiveFDs = fdService.findTransitiveFDs(allOriginalFds);
+		Set<FD> allFDsForClosure = new HashSet<>(allOriginalFds);
+		allFDsForClosure.addAll(transitiveFDs);
+		List<FD> fdsListForClosure = new ArrayList<>(allFDsForClosure);
+
+		// Call the robust method that checks all subsets
+		return isRelationBCNF(attributes, fdsListForClosure);
+	}
+
+	private boolean isRelationBCNF(Set<String> attributes, List<FD> allFdsForClosure) {
+		Set<String> allAttributes = new HashSet<>(attributes);
+		List<String> attrList = new ArrayList<>(attributes);
+		// Number of attributes in the table
+		int n = attrList.size();
+
+		// Loop through 2^n - 1 (all non-empty subsets)
+		for (int mask = 1; mask < (1 << n); mask++) {
+			Set<String> X = new LinkedHashSet<>();
+			for (int i = 0; i < n; i++) {
+				// Potential determinant X
+				if ((mask & (1 << i)) != 0) X.add(attrList.get(i));
+			}
+			// If the entire attribute set X is (R_i), skip (X != R_i)
+			if (X.size() == allAttributes.size()) {
+				continue;
+			}
+			// Calculate Closure: F+ (allFdsForClosure) is used for closure
+			Set<String> closureOfX = fdService.computeClosure(X, allFdsForClosure);
+
+			// Intersect the closure of X with the attributes R_i (X+ ∩ R_i)
+			Set<String> closureRestrictedToRi = new HashSet<>(closureOfX);
+			closureRestrictedToRi.retainAll(allAttributes);
+
+			// Non-triviality check: Check if X implies something non-trivial in R_i
+			Set<String> impliedNonTrivial = new HashSet<>(closureRestrictedToRi);
+			impliedNonTrivial.removeAll(X);
+
+			// If X implies something non-trivial
+			if (!impliedNonTrivial.isEmpty()) {
+
+				// Check: Is X a Super Key? (X+ ∩ R_i = R_i?)
+				if (!closureRestrictedToRi.containsAll(allAttributes)) {
+					// X is not a super key, then BCNF violation
+					return false;
+				}
+			}
+		}
+		// All non-trivial determinants are super keys
+		return true;
+	}
 }
+

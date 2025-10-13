@@ -26,33 +26,103 @@ document.addEventListener('DOMContentLoaded', function() {
                 Array.from(fdTableBody.rows).forEach((r, i) => r.cells[0].textContent = i + 1);
             }
         });
-    }
 
-    // Adding and deleting manual data section
-    const addRowButton = document.getElementById('addRow');
-    const manualTableBody = document.getElementById('manualTable')?.querySelector('tbody');
-    if (addRowButton && manualTableBody) {
-        addRowButton.addEventListener('click', () => {
+        // If the table is empty (no restored data), insert a blank row
+        if (fdTableBody.rows.length === 0) {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td contenteditable></td>
-                <td contenteditable></td>
-                <td contenteditable></td>
-                <td><button class="delManualRow">×</button></td>
-            `;
-            manualTableBody.appendChild(tr);
+            <td>1</td>
+            <td contenteditable></td>
+            <td>→</td>
+            <td contenteditable></td>
+            <td><button class="delFd">×</button></td>
+        `;
+            fdTableBody.appendChild(tr);
+        }
+    }
+
+    // Dynamic manual data section
+    const manualDataTable = document.getElementById('manualDataTable');
+    const addRowButton = document.getElementById('addRow');
+    const updateColumnsBtn = document.getElementById('updateColumnsBtn');
+    const columnCountInput = document.getElementById('columnCountInput');
+
+    // Main function that updates the table according to the desired number of columns
+    function updateManualTable(colCount) {
+        if (!manualDataTable || colCount < 1) return;
+
+        const thead = manualDataTable.querySelector('thead');
+        const tbody = manualDataTable.querySelector('tbody');
+
+        // Clear existing header and body
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+
+        // Create new header
+        const headerRow = thead.insertRow();
+        for (let i = 1; i <= colCount; i++) {
+            const th = document.createElement('th');
+            th.textContent = i;
+            headerRow.appendChild(th);
+        }
+        // Add a cell titled "Del" for the delete button
+        const delTh = document.createElement('th');
+        delTh.textContent = 'Del';
+        headerRow.appendChild(delTh);
+
+        // Add at least one blank line
+        addManualRow();
+    }
+
+    // Function that adds a new row
+    function addManualRow() {
+        const tbody = manualDataTable.querySelector('tbody');
+        if (!tbody) return;
+
+        // Read the number of columns directly from input
+        const colCount = parseInt(columnCountInput.value, 10);
+        if (colCount < 1) return;
+
+        const newRow = tbody.insertRow();
+
+        // Add editable cells (td) as many times as the number of columns
+        for (let i = 0; i < colCount; i++) {
+            const cell = newRow.insertCell();
+            cell.contentEditable = true;
+        }
+
+        // Add row delete button
+        const deleteCell = newRow.insertCell();
+        deleteCell.innerHTML = `<button class="delManualRow">×</button>`;
+    }
+
+    // Update the table when the "Update Table" button is clicked
+    if (updateColumnsBtn && columnCountInput) {
+        updateColumnsBtn.addEventListener('click', () => {
+            const count = parseInt(columnCountInput.value, 10);
+            updateManualTable(count);
         });
-        manualTableBody.addEventListener('click', e => {
+    }
+
+    // Add a new row when the "+ Add Row" button is clicked
+    if (addRowButton) {
+        addRowButton.addEventListener('click', addManualRow);
+    }
+
+    // Manage row deletion event (with event deletion)
+    if (manualDataTable) {
+        manualDataTable.addEventListener('click', e => {
             if (e.target.matches('.delManualRow')) {
                 e.target.closest('tr').remove();
             }
         });
+
+        // Initialize table with default 3 columns on page load
+        updateManualTable(3);
     }
 
     // Preview CSV files
     const csvInput = document.getElementById('csvfile');
-    const csvPreview = document.getElementById('csvPreview');
-    const showMoreCsv = document.getElementById('showMoreCsv');
     let fullCsvData = [];
     if (csvInput) {
         csvInput.addEventListener('change', () => {
@@ -62,55 +132,89 @@ document.addEventListener('DOMContentLoaded', function() {
             reader.onload = evt => {
                 const lines = evt.target.result
                     .split(/\r?\n/)
-                    .filter(l => l.trim() !== '');
+                    .map(l => l.trim())
+                    .filter(l => l !== '');
+
                 fullCsvData = lines;
-                renderCsvPreview(5);
-                document.getElementById('manualData').value = fullCsvData.join('\n');
+
+                // Manually fill table with CSV data
+                populateManualTableFromCsv(fullCsvData);
+                // Update the manualData hidden input with CSV data
+                document.getElementById('manualData').value = fullCsvData.join(';');
             };
             reader.readAsText(file);
         });
     }
-    if (showMoreCsv) {
-        showMoreCsv.addEventListener('click', e => {
-            e.preventDefault();
-            renderCsvPreview(fullCsvData.length);
+
+    // Takes CSV rows and fills the table manually
+    function populateManualTableFromCsv(csvLines) {
+        if (!csvLines || csvLines.length === 0) return;
+
+        // Determine the number of columns
+        const columnCount = csvLines[0].split(',').length;
+        const columnCountInput = document.getElementById('columnCountInput');
+
+        // Update number of columns (regenerates headers)
+        if (columnCountInput) {
+            columnCountInput.value = columnCount;
+        }
+        updateManualTable(columnCount);
+
+        // Fill table body with CSV data
+        const tbody = manualDataTable.querySelector('tbody');
+        if (!tbody) return;
+
+        // Delete the default blank row that updateManualTable adds
+        tbody.innerHTML = '';
+
+        csvLines.forEach(rowString => {
+            const newRow = tbody.insertRow();
+            const cells = rowString.split(',');
+
+            // Add only the specified number of cells in the column
+            for (let i = 0; i < columnCount; i++) {
+                const cellValue = cells[i] !== undefined ? cells[i] : '';
+                const newCell = newRow.insertCell();
+                newCell.setAttribute('contenteditable', 'true');
+                newCell.textContent = cellValue;
+            }
+
+            // Add row delete button
+            const deleteCell = newRow.insertCell();
+            deleteCell.innerHTML = '<button type="button" class="delManualRow">×</button>';
         });
     }
-    function renderCsvPreview(count) {
-        if (!csvPreview) return;
-        csvPreview.tHead.innerHTML = '';
-        let tbody = csvPreview.querySelector('tbody');
-        if (!tbody) {
-            tbody = document.createElement('tbody');
-            csvPreview.appendChild(tbody);
-        }
-        tbody.innerHTML = '';
-        if (fullCsvData.length === 0) return;
-        const numCols = fullCsvData[0].split(',').length;
-        const headers = Array.from({length: numCols}, (_, i) => 'col' + (i + 1));
-        const theadRow = document.createElement('tr');
-        headers.forEach(h => {
-            const th = document.createElement('th');
-            th.textContent = h;
-            theadRow.appendChild(th);
-        });
-        csvPreview.tHead.appendChild(theadRow);
+    // Take CSV rows and fill manual FD table
+    function populateFdTableFromCsv(fdLines) {
+        const fdTableBody = document.querySelector('#fdTable tbody');
+        if (!fdTableBody) return;
+        // Clear existing FDs
+        fdTableBody.innerHTML = '';
+        fdLines.forEach((fdText, index) => {
+            // Normalize the separator
+            const line = fdText.replace(/→/g, '->');
+            const parts = line.split('->');
+            if (parts.length !== 2) return;
 
-        fullCsvData.slice(0, count).forEach(line => {
-            const tr = document.createElement('tr');
-            line.split(',').forEach(val => {
-                const td = document.createElement('td');
-                td.textContent = val;
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
+            const left = parts[0].trim();
+            const right = parts[1].trim();
+
+            const newRow = fdTableBody.insertRow();
+            newRow.innerHTML = `
+                <td>${index + 1}</td>
+                <td contenteditable>${left}</td>
+                <td>→</td>
+                <td contenteditable>${right}</td>
+                <td><button type="button" class="delFd">×</button></td>
+            `;
         });
+
+        // Rearrange line numbers
+        Array.from(fdTableBody.rows).forEach((r, i) => r.cells[0].textContent = i + 1);
     }
 
     // Functional dependencies file preview section
     const fdFileInput = document.getElementById('fdfile');
-    const fdPreview    = document.getElementById('fdPreview');
-    const showMoreFd   = document.getElementById('showMoreFd');
     let fullFdData     = [];
     if (fdFileInput) {
         fdFileInput.addEventListener('change', () => {
@@ -118,49 +222,20 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = evt => {
+                // Read, normalize and filter FD rows
                 fullFdData = evt.target.result
                     .split(/\r?\n/)
-                    .map(l => l.trim())
-                    .filter(l => l !== '');
-                renderFdPreview(5);
+                    // Normalize the separator
+                    .map(l => l.trim().replace(/→/g, '->'))
+                    // Keep only valid FD rows
+                    .filter(l => l !== '' && l.includes('->'));
+
+                // Fill manual FD table
+                populateFdTableFromCsv(fullFdData);
             };
             reader.readAsText(file);
         });
     }
-    if (showMoreFd) {
-        showMoreFd.addEventListener('click', e => {
-            e.preventDefault();
-            renderFdPreview(fullFdData.length);
-        });
-    }
-    function renderFdPreview(count) {
-        if (!fdPreview) return;
-        const tbody = fdPreview.querySelector('tbody');
-        tbody.innerHTML = '';
-        fullFdData.slice(0, count).forEach(line => {
-            const parts = line.split(/->|→/).map(s => s.trim());
-            if (parts.length !== 2) return;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${parts[0]}</td><td>→</td><td>${parts[1]}</td>`;
-            tbody.appendChild(tr);
-        });
-    }
-
-    // Switching between tabs
-    function setupTab(idBtn, showId, hideId) {
-        const tabBtn = document.getElementById(idBtn);
-        if (!tabBtn) return;
-        tabBtn.addEventListener('click', () => {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            tabBtn.classList.add('active');
-            document.getElementById(showId).style.display = 'block';
-            document.getElementById(hideId).style.display = 'none';
-        });
-    }
-    setupTab('tab-upload', 'section-upload', 'section-manual');
-    setupTab('tab-manual', 'section-manual', 'section-upload');
-    setupTab('tab-fd-manual', 'fd-manual', 'fd-upload');
-    setupTab('tab-fd-upload', 'fd-upload', 'fd-manual');
 
     // Adding Monte Carlo optimization checkbox
     const monteCarloCheckbox = document.getElementById('mcCheckbox');
@@ -175,16 +250,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('calcForm');
     if (!form) return console.error("Form could not be found.");
     form.addEventListener('submit', e => {
-
         // Collecting CSV file or manual data
-        let rows = fullCsvData.length
-            ? fullCsvData
-            : Array.from(document.querySelectorAll('#manualTable tbody tr'))
-                .map(row => Array.from(row.querySelectorAll('td[contenteditable]'))
-                    .map(td => td.textContent.trim()).join(','))
-                .filter(r => r);
+        let manualContent = '';
 
-        document.getElementById('manualData').value = rows.join(';');
+        // Always read from the table as the manual table is the only and editable data source
+        const manualRows = Array.from(document.querySelectorAll('#manualDataTable tbody tr'));
+        manualContent = manualRows.map(row => {
+            // Only get contenteditable tds
+            const cells = Array.from(row.querySelectorAll('td[contenteditable]'));
+            return cells.map(cell => cell.textContent.trim()).join(',');
+            // Filter empty lines
+        }).filter(line => line.replace(/,/g, '').trim() !== '').join(';');
+        document.getElementById('manualData').value = manualContent;
 
         // Collecting functional dependencies
         let fdLines = Array.from(document.querySelectorAll('#fdTable tbody tr'))
@@ -194,68 +271,51 @@ document.addEventListener('DOMContentLoaded', function() {
                 return lhs && rhs ? `${lhs}->${rhs}` : null;
             })
             .filter(s => s);
-        if (fdLines.length === 0 && fullFdData.length) {
-            fdLines = fullFdData.map(l => l.replace('→','->').trim());
-        }
         document.getElementById('fdsInput').value = fdLines.join(';');
-    });
 
-    // Function that calculates HSL lightness adjustment
-    function getPlaqueColor(value) {
-        // value: 0..1, 1 => no plaque (white)
-        // darkness = 1 - value -> 0..1
-        const darkness = Math.max(0, Math.min(1, 1 - value));
-        // map darkness to lightness: light (85%) .. dark (30%)
-        const lightness = 85 - 55 * darkness; // 85..30
-        return `hsl(220, 85%, ${lightness}%)`;
-    }
+        // Stop form submit by default
+        e.preventDefault();
 
-    // Applying color scale
-    function applyColorScale(tableSelector) {
-        if (!window.ricMatrix || !window.ricMatrix.length) return;
-        document.querySelectorAll(`${tableSelector} tbody tr`)
-            .forEach((tr, i) => {
-                const ricRow = window.ricMatrix[i];
-                if (!Array.isArray(ricRow)) return;
-                Array.from(tr.cells).forEach((td, j) => {
-                    const raw = ricRow[j];
-                    if (raw == null) return;
-                    const val = parseFloat(raw);
-                    if (!isNaN(val) && val >= 0 && val < 1) {
-                        td.style.backgroundColor = getPlaqueColor(val);
-                    }
+        const finalDataString = manualContent.trim();
+        const finalFdsString = fdLines.join(';').trim();
+
+        const isDataMissing = finalDataString.length === 0;
+        const isFdsMissing = finalFdsString.length === 0;
+
+        // Both Data and FD are missing
+        if (isDataMissing && isFdsMissing) {
+            Swal.fire({
+                icon: 'error',
+                title: 'No input was entered',
+                text: 'Please enter data and functional dependencies.',
+                confirmButtonText: 'Close'
             });
-        });
-    }
-    // After pressing compute button, coloring the initial input data table
-    if (ricMatrix.length > 0 && document.getElementById('initialCalcTable')) {
-        applyColorScale('#initialCalcTable');
-    }
+            return;
+        }
 
-    const showButton   = document.getElementById('showCalcBtn');
-    const returnButton = document.getElementById('returnBtn');
-    const initial   = document.getElementById('initialCalcTable');
-    const ric       = document.getElementById('ricTable');
+        // Only table data is missing
+        if (isDataMissing) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Table Data Missing',
+                text: 'Please enter any table data (manual or CSV).',
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
 
-    // Show Information Contents button adjustments:
-    if (showButton && returnButton && initial && ric) {
-        showButton.addEventListener('click', () => {
-            initial.style.display = 'none';
-            ric.style.display = 'table';
-            showButton.style.display = 'none';
-            returnButton.style.display = 'inline-block';
-            applyColorScale('#ricTable');
-        });
+        // Only FDs are missing
+        if (isFdsMissing) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Functional Dependencies Missing',
+                text: 'Please enter any functional dependencies.',
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
 
-        // Return to Input button section
-        returnButton.addEventListener('click', () => {
-            ric.style.display = 'none';
-            initial.style.display = 'table';
-            returnButton.style.display = 'none';
-            showButton.style.display = 'inline-block';
-            applyColorScale('#initialCalcTable');
-        });
-    } else {
-        console.warn('Buttons or tables not found – listeners not attached');
-    }
+        // If everything is valid, manually submit the form
+        form.submit();
+    });
 });

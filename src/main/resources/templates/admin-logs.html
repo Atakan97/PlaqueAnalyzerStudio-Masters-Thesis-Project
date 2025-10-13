@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="tr" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Panel | Student Log Records</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <style>
+    /* Style additions for this page only */
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .log-table th, .log-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      font-size: 0.9em;
+      vertical-align: top;
+    }
+    .log-table th {
+      background-color: #f2f2f2;
+    }
+    .details-cell {
+      white-space: pre-wrap;
+      max-width: 400px;
+      overflow: auto;
+      font-family: monospace;
+      background-color: #eee;
+    }
+    .duration-cell {
+      text-align: right;
+    }
+
+    /* Delete Button Style */
+    .delete-btn {
+      background-color: #ef4444;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: 600;
+      transition: background-color 0.2s ease;
+    }
+    .delete-btn:hover {
+      background-color: #dc2626;
+    }
+
+    /* Logout Button Style (Top-Right Positioning) */
+    .logout-button {
+      /* Positioning */
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+
+      /* Appearance */
+      background-color: #ef4444;
+      color: white;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+      transition: background-color 0.3s ease;
+    }
+
+    .logout-button:hover {
+      background-color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Student Activity Logs</h1>
+<form method="GET" th:action="@{/admin/logs}" style="">
+
+  <div style="display: flex; flex-direction: column;">
+    <label for="userNameFilter" style="font-weight: 600; margin-bottom: 5px; color: #334155;">User Name:</label>
+    <input type="text" id="userNameFilter" name="userNameFilter"
+           th:value="${userNameFilter}" placeholder="Enter name..."
+           style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 180px;">
+  </div>
+
+</form>
+<p>All log records pulled from PostgreSQL database</p>
+
+<hr>
+
+<table class="log-table">
+  <thead>
+  <tr>
+    <th>ID</th>
+    <th>Timestamp</th>
+    <th>User Name</th>
+    <th>Process Type</th>
+    <th>Elapsed Time (s)</th> <th>Number of Attempt</th>
+    <th>Details (JSON)</th>
+    <th>Action</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr th:each="log : ${logs}">
+    <td th:text="${log.id}">1</td>
+    <td th:text="${#temporals.format(log.timestamp, 'yyyy-MM-dd HH:mm:ss')}" title="Log time">2025-09-29 10:00:00</td>
+
+    <td th:text="${log.userName}">User Name</td>
+    <td th:text="${log.activityType}">BCNF_SUCCESS</td>
+    <td class="duration-cell" th:text="${log.elapsedTimeSecs != null ? log.elapsedTimeSecs + ' s' : '-'}">-</td>
+    <td th:text="${log.attempts != null ? log.attempts : '-'}">-</td>
+
+    <td class="details-cell">
+      <pre th:text="${log.detailsJson}"></pre>
+    </td>
+
+    <td style="text-align: center;">
+      <form th:action="@{/admin/delete/{id}(id=${log.id})}" method="post"
+            onsubmit="return confirm('Are you sure you want to delete this log record?');">
+
+        <button type="submit" class="delete-btn">
+          Delete
+        </button>
+      </form>
+    </td>
+  </tr>
+  </tbody>
+</table>
+<a th:href="@{/admin/logout}" class="logout-button">Logout</a>
+</body>
+</html>

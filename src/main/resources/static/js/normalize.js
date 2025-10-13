@@ -5,36 +5,64 @@ document.addEventListener('DOMContentLoaded', () => {
     const addTableBtn = document.getElementById('addTable');
     const decContainer= document.getElementById('decomposedTablesContainer');
 
-    // Lossless & Dependency options
+    const IS_RESTORE_MODE = Array.isArray(window.currentRelationsColumns) && window.currentRelationsColumns.length > 0;
+
+    // Get session start time (if not available, use current time)
+    const SESSION_START_TIME_MS = window.normalizationStartTimeMs || Date.now();
+
+    //Compute plaque and continue to normalization buttons
+    const computeAllBtn = document.getElementById('computeAllBtn');
+    const continueNormalizationBtn = document.getElementById('continueNormalizationBtn');
+
+    const changeDecompositionBtn = document.getElementById('changeDecompositionBtn');
+
+    // Lossless & Dependency options (not used in restore but kept)
     const losslessCheckbox   = document.getElementById('losslessJoin');
     const dependencyCheckbox = document.getElementById('dependencyPreserve');
     const timeLimitInput     = document.getElementById('timeLimit');
 
-    let timerInterval = null;
-    let elapsedSecs   = 0;
-    let timerStarted  = false;
+    // Functional dependencies transitive closure calculation logic
+    const showClosureNormBtn = document.getElementById('showClosureNormBtn');
+    const fdListUlNorm = document.getElementById('fdListUl');
 
-    // Reset attempt counter on load
-    fetch('/normalize/resetAttempt', { method: 'POST' })
-        .then(() => { if (attemptEl) attemptEl.textContent = '0'; })
-        .catch(err => console.error('Reset attempt failed', err));
+    // Data from Thymeleaf
+    const transitiveFdsArrayNorm = window.transitiveFdsArray || [];
+    const fdItemsNorm = window.fdItems || [];
+    // Available red FDs
+    const fdInferredNorm = new Set(window.fdInferred || []);
 
-    function startTimer() {
-        if (timerStarted) return;
-        timerStarted = true;
-        elapsedSecs = 0;
-        if (elapsedEl) elapsedEl.textContent = '0';
-        timerInterval = setInterval(() => {
-            elapsedSecs++;
-            if (elapsedEl) elapsedEl.textContent = elapsedSecs;
-        }, 1000);
+    // Appends FDs to the existing list with coloring
+    function appendTransitiveFdsNorm(fdsToAppend) {
+        const existingFds = new Set();
+        Array.from(fdListUlNorm.children).forEach(li => {
+            // Collect existing original FDs from the list
+            existingFds.add(li.textContent.trim());
+        });
+
+        const fragment = document.createDocumentFragment();
+        fdsToAppend.forEach(fd => {
+            // Only add what is not in the original list or what is not yet added to the current list
+            if (existingFds.has(fd)) {
+                return;
+            }
+            const li = document.createElement('li');
+            li.textContent = fd;
+            li.classList.add('inferred');
+            fragment.appendChild(li);
+        });
+        fdListUlNorm.appendChild(fragment);
     }
-    function stopTimer() {
-        if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            timerStarted = false;
-        }
+
+    if (showClosureNormBtn && fdListUlNorm) {
+        showClosureNormBtn.addEventListener('click', () => {
+            // Disable the button as soon as the process starts
+            if (showClosureNormBtn.disabled) return;
+            showClosureNormBtn.disabled = true;
+            // Add FDs to the list
+            appendTransitiveFdsNorm(transitiveFdsArrayNorm);
+            // Remove the button from the page completely
+            showClosureNormBtn.remove();
+        });
     }
 
     // Parse original table (initialCalcTable passed from server as window.originalTable)
@@ -93,49 +121,380 @@ document.addEventListener('DOMContentLoaded', () => {
     renderOrigBody(originalRows);
     if (origContainer) origContainer.appendChild(origTable);
 
-    // Show FDs
-    let showFdsBtn = document.getElementById('showAllFdsBtn');
-    if (!showFdsBtn) {
-        showFdsBtn = document.createElement('button');
-        showFdsBtn.id = 'showAllFdsBtn';
-        showFdsBtn.textContent = 'Show Functional Dependencies';
-        showFdsBtn.classList.add('button', 'show-fds-btn');
-        if (addTableBtn && addTableBtn.parentNode) {
-            addTableBtn.parentNode.insertBefore(showFdsBtn, addTableBtn.nextSibling);
+    // Parse a single FD string like "1,4->3" or "1,4 -> 3" -> normalized "1,4->3"
+    function normalizeFdString(fd) {
+        return String(fd).replace(/\s+/g,'').replace(/→/g,'->');
+    }
+
+    // Parse FD like "1,4->3" -> {lhs: [0,3], rhs: [2]} (zero-based numbers)
+    function parseFdToZeroBased(fdStr) {
+        if (!fdStr || !fdStr.trim()) return null;
+        fdStr = normalizeFdString(fdStr);
+        const parts = fdStr.split('->');
+        if (parts.length !== 2) return null;
+        const lhs = parts[0].split(',').map(s => s.trim()).filter(Boolean).map(n => Number(n) - 1);
+        const rhs = parts[1].split(',').map(s => s.trim()).filter(Boolean).map(n => Number(n) - 1);
+        if (lhs.some(isNaN) || rhs.some(isNaN)) return null;
+        return { lhs, rhs };
+    }
+
+    // fdZero is object from parseFdToZeroBased, colsZeroBased is array like [0,2,3]
+    // Returns remapped FD string in local 1-based form like "1,3->2" or null if FD not applicable
+    function remapFdToLocal(fdZeroObj, colsZeroBased) {
+        if (!fdZeroObj || !Array.isArray(colsZeroBased)) return null;
+        // Build lookup: origZero -> localIndex(1-based)
+        const map = new Map();
+        for (let i = 0; i < colsZeroBased.length; i++) {
+            map.set(Number(colsZeroBased[i]), i + 1); // local numbers are 1-based
+        }
+        // Check all referenced attributes are inside map
+        for (const x of [...fdZeroObj.lhs, ...fdZeroObj.rhs]) {
+            if (!map.has(Number(x))) return null; // Not applicable
+        }
+        const lhsLocal = fdZeroObj.lhs.map(x => map.get(Number(x)));
+        const rhsLocal = fdZeroObj.rhs.map(x => map.get(Number(x)));
+        return lhsLocal.join(',') + '->' + rhsLocal.join(',');
+    }
+
+    // Parse FD text (semicolon/newline separated) -> array of normalized strings ["1,4->3", ...]
+    function splitFdsText(fdsText) {
+        if (!fdsText) return [];
+        if (Array.isArray(fdsText)) return fdsText.map(String).filter(Boolean).map(normalizeFdString);
+        return String(fdsText).split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean).map(normalizeFdString);
+    }
+
+
+    // Compute RIC for a single wrapper
+    async function computeRicForWrapper(wrapper) {
+        if (!wrapper) return;
+
+        // Parse columns array for this wrapper (original zero-based indices)
+        let cols = [];
+        try { cols = JSON.parse(wrapper.dataset.columns || '[]'); } catch (e) { cols = []; }
+        cols = Array.isArray(cols) ? cols.map(Number) : [];
+
+        // Check stored manual data (for restored tables)
+        const storedManualDataStr = wrapper.dataset.restoredManualData || '';
+
+        let manualData = '';
+        let manualRows = [];
+
+        // Determine the set of tuples (manualData)
+        if (IS_RESTORE_MODE) {
+            // Normalization page, next step
+            // originalRows will be empty at this point. Current table's tuples will be used.
+
+            if (storedManualDataStr) {
+                // Option A: If this is a *restored* base table, use the stored data
+                manualRows = storedManualDataStr.split(';').filter(Boolean).map(s => s.trim());
+                manualData = manualRows.join(';');
+            }
+
+            // Option B: If it's a new decomposed table or the restored table's columns have changed,
+            // read from the tbody, which reflects the most current state.
+            if (!manualData) {
+                manualRows = Array.from(wrapper.querySelectorAll('tbody tr')).map(tr => {
+                    return Array.from(tr.cells).map(td => td.textContent).join(',');
+                });
+                manualData = manualRows.join(';');
+            }
+
         } else {
-            document.body.appendChild(showFdsBtn);
+            // Step 1
+            // Remove tuples from global originalRows
+            const seen = new Set();
+            originalRows.forEach(row => {
+                const tupArr = cols.map(i => (row[i] !== undefined ? String(row[i]) : ''));
+                const key = tupArr.join('|');
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    manualRows.push(tupArr.join(','));
+                }
+            });
+            manualData = manualRows.join(';');
+        }
+
+        if (manualData.length === 0 && storedManualDataStr) {
+            // If the calculation result is empty (and there is restore data), use restore data
+            manualData = storedManualDataStr;
+            manualRows = storedManualDataStr.split(';').filter(Boolean).map(s => s.trim());
+        }
+
+        // Optionally read any displayed/original FDs that might be stored
+        let displayedFds = [];
+        try { displayedFds = readProjectedFdsFromWrapper(wrapper) || []; } catch (e) { displayedFds = []; }
+
+        // Determine FD strings to send to server (must be local-indexed relative to this wrapper)
+        // Original-index style strings if available (e.g. "1,4->3" or "2->3")
+        let rawFdsArr = [];
+        try {
+            // Prefer an explicit original-index store if present
+            if (wrapper.dataset.projectedFdsOrig) {
+                rawFdsArr = normalizeWindowArray(JSON.parse(wrapper.dataset.projectedFdsOrig));
+            } else {
+                // readProjectedFdsFromWrapper may return strings in original-index form
+                rawFdsArr = readProjectedFdsFromWrapper(wrapper) || [];
+            }
+        } catch (e) {
+            rawFdsArr = readProjectedFdsFromWrapper(wrapper) || [];
+        }
+
+        // Normalize into array of strings
+        rawFdsArr = Array.isArray(rawFdsArr) ? rawFdsArr.map(String).filter(Boolean) : [];
+
+        // Convert each raw FD (original-indexed) -> zero-based object -> remap to local 1-based
+        const localFdsToSend = [];
+        rawFdsArr.forEach(fdText => {
+            const normalized = normalizeFdString(fdText); // e.g. "1,4->3"
+            const zeroObj = parseFdToZeroBased(normalized); // {lhs:[0,..], rhs:[..]} or null
+            if (!zeroObj) return;
+            const remapped = remapFdToLocal(zeroObj, cols); // "1,3->2" relative to wrapper columns (1-based)
+            if (remapped) localFdsToSend.push(remapped);
+        });
+
+        // If no FDs available at all, send empty string
+        const fdsPayloadString = localFdsToSend.length > 0 ? localFdsToSend.join(';') : '';
+
+        // Build payload (this is the body sent to /normalize/decompose)
+        const payload = {
+            columns: cols,
+            manualData: manualData,
+            fds: fdsPayloadString,
+            timeLimit: parseInt(timeLimitInput?.value || '30', 10),
+            monteCarlo: false,
+            samples: 0
+        };
+
+        console.log('computeRicForWrapper: sending /normalize/decompose payload=', payload);
+
+        try {
+            const resp = await fetch('/normalize/decompose', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) {
+                const txt = await resp.text();
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Compute Failed',
+                    text: 'Computation for table failed: ' + (txt || resp.statusText),
+                    confirmButtonText: 'Kapat'
+                });
+                return;
+            }
+
+            const json = await resp.json();
+            console.log('computeRicForWrapper: /normalize/decompose response:', json);
+
+            // Extract RIC matrix
+            const ricMatrixSingle = Array.isArray(json.ric) ? json.ric
+                : Array.isArray(json.ricMatrix) ? json.ricMatrix
+                    : Array.isArray(json.matrix) ? json.matrix
+                        : [];
+
+            // Server-projected FDs
+            let serverProjected = [];
+            if (Array.isArray(json.projectedFDs) && json.projectedFDs.length > 0) serverProjected = json.projectedFDs.slice();
+            else if (Array.isArray(json.fds) && json.fds.length > 0) serverProjected = json.fds.slice();
+            else if (typeof json.fds === 'string' && json.fds.trim()) serverProjected = splitFdsText(json.fds);
+
+            // Normalize strings
+            serverProjected = serverProjected.map(s => String(s).trim()).filter(Boolean).map(s => s.replace(/\s+/g,'').replace(/→/g,'->'));
+
+            // Remap each serverProjected FD into wrapper-local numbering (1-based local)
+            const localFds = [];
+            serverProjected.forEach(s => {
+                const fdZero = parseFdToZeroBased(s); // Returns {lhs:[0..], rhs:[..]} or null
+                if (!fdZero) return;
+                const rem = remapFdToLocal(fdZero, cols); // Returns "1,3->2" (local 1-based) or null if not applicable
+                if (rem) localFds.push(rem);
+            });
+
+            // Store both forms on wrapper
+            try { wrapper.dataset.projectedFdsOrig = JSON.stringify(serverProjected); } catch (e) {}
+            try { wrapper.dataset.projectedFds = JSON.stringify(localFds); } catch (e) {}
+
+            // Update FD list in UI, show serverProjected to the user
+            try {
+                const fdContainer = wrapper.querySelector('.fd-list-container');
+                const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
+                if (fdUl) {
+                    fdUl.innerHTML = '';
+                    const toShow = serverProjected.length > 0 ? serverProjected : localFds;
+                    toShow.forEach(s => {
+                        const li = document.createElement('li');
+                        li.textContent = String(s);
+                        fdUl.appendChild(li);
+                    });
+                }
+            } catch (e) {
+                console.warn('computeRicForWrapper: failed to render fd list', e);
+            }
+
+            // Render wrapper tbody using manualRows and apply plaque coloring with ricMatrixSingle
+            const tbody = wrapper.querySelector('table tbody');
+            if (tbody) {
+                tbody.innerHTML = '';
+                for (let r = 0; r < manualRows.length; r++) {
+                    const tup = manualRows[r].split(',').map(x => (x == null ? '' : String(x).trim()));
+                    const trEl = tbody.insertRow();
+                    for (let cIdx = 0; cIdx < cols.length; cIdx++) {
+                        const td = trEl.insertCell();
+                        td.textContent = tup[cIdx] !== undefined ? tup[cIdx] : '';
+                        td.dataset.origIdx = cols[cIdx];
+
+                        // Attempt to read ric val: ricMatrixSingle[r][cIdx]
+                        let ricVal = NaN;
+                        if (Array.isArray(ricMatrixSingle) && Array.isArray(ricMatrixSingle[r]) && ricMatrixSingle[r][cIdx] !== undefined) {
+                            const v = ricMatrixSingle[r][cIdx];
+                            const parsed = parseFloat(v);
+                            if (!isNaN(parsed)) ricVal = parsed;
+                        }
+
+                        if (!isNaN(ricVal) && ricVal < 1) {
+                            td.classList.add('plaque-cell');
+                            const lightness = 10 + 90 * ricVal;
+                            td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                        } else {
+                            td.style.backgroundColor = 'white';
+                            td.classList.remove('plaque-cell');
+                        }
+                    }
+                }
+            }
+
+            console.log('computeRicForWrapper: done for wrapper; serverProjected=', serverProjected, 'localFds=', localFds, 'ricMatrix=', ricMatrixSingle);
+        } catch (err) {
+            console.error('computeRicForWrapper failed', err);
+            Swal.fire({
+                icon: 'error',
+                title: 'Server Error',
+                text: 'Server error while computing RIC for table: ' + (err && err.message ? err.message : err),
+                confirmButtonText: 'Close'
+            });
         }
     }
 
-    // Compute All (single global compute button)
-    let computeAllBtn = document.getElementById('computeAllBtn');
-    if (!computeAllBtn) {
-        computeAllBtn = document.createElement('button');
-        computeAllBtn.id = 'computeAllBtn';
-        computeAllBtn.textContent = 'Compute RIC';
-        computeAllBtn.classList.add('button', 'compute-all-btn');
-        if (showFdsBtn && showFdsBtn.parentNode) {
-            showFdsBtn.parentNode.insertBefore(computeAllBtn, showFdsBtn.nextSibling);
-        } else if (addTableBtn && addTableBtn.parentNode) {
-            addTableBtn.parentNode.insertBefore(computeAllBtn, addTableBtn.nextSibling);
-        } else {
-            document.body.appendChild(computeAllBtn);
+    let restoreMode = false;
+    // Restoring decomposed-as-original
+    try {
+        function normalizeWindowArray(winVal) {
+            if (winVal == null) return [];
+            if (Array.isArray(winVal)) return winVal;
+            if (typeof winVal === 'string') {
+                const s = winVal.trim();
+                if (s === '') return [];
+                try {
+                    // Just parse the incoming data assuming it represents a JSON array
+                    const parsed = JSON.parse(s);
+                    if (Array.isArray(parsed)) return parsed;
+                } catch (e) {
+                    // Return empty array if there is a JSON parse error
+                    return [];
+                }
+            }
+            return [];
         }
-    }
 
-    // Undo button (restore previous decomposition snapshot)
-    let undoBtn = document.getElementById('undoDecompBtn');
-    if (!undoBtn) {
-        undoBtn = document.createElement('button');
-        undoBtn.id = 'undoDecompBtn';
-        undoBtn.textContent = 'Undo last decomposition';
-        undoBtn.classList.add('button', 'per-add-btn');
-        // place near computeAllBtn if present
-        if (computeAllBtn && computeAllBtn.parentNode) {
-            computeAllBtn.parentNode.insertBefore(undoBtn, computeAllBtn.nextSibling);
-        } else {
-            document.body.appendChild(undoBtn);
-        }
+        const crColsRaw = window.currentRelationsColumns || null;
+        const crManualRaw = window.currentRelationsManual || null;
+        const crFdsRaw = window.currentRelationsFds || null;
+
+        const crCols = normalizeWindowArray(crColsRaw);
+        const crManual = normalizeWindowArray(crManualRaw);
+        const crFds = normalizeWindowArray(crFdsRaw);
+
+        restoreMode = Array.isArray(crCols) && crCols.length > 0;
+
+        if (restoreMode) {
+
+            // Hide old "Original Table"
+            if (origContainer) origContainer.style.display = 'none';
+
+            // Show global control buttons again in restore mode
+            if (addTableBtn) addTableBtn.style.display = 'inline-block'; // +Add Decomposed Table
+            const fdListContainer = document.getElementById('fdListContainer');
+            if (fdListContainer) fdListContainer.style.display = 'none'; // Hide FD list
+
+            // Hide Compute Plaque and Continue buttons (these should be visible after check decomposition)
+            if (computeAllBtn) computeAllBtn.style.display = 'none';
+            if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
+
+            // Show Check Decomposition button
+            const checkDecompositionBtn = document.getElementById('checkDecompositionBtn');
+            if (checkDecompositionBtn) checkDecompositionBtn.style.display = 'none';
+
+            // Hide Change Decomposition button (should be visible after check decomposition)
+            if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
+
+            const globalActionsDiv = document.querySelector('.global-actions');
+            if (globalActionsDiv) globalActionsDiv.style.display = 'none';
+
+            // Clean container and hide
+            if (decContainer) decContainer.innerHTML = '';
+            let restoreTableCounter = 0; // New R# counter
+
+            for (let i = 0; i < crCols.length; i++) {
+                restoreTableCounter++;
+                let colsEntry = crCols[i];
+                // Convert the data coming as JSON or string to an array
+                if (typeof colsEntry === 'string') {
+                    try {
+                        const p = JSON.parse(colsEntry);
+                        colsEntry = Array.isArray(p) ? p : [];
+                    } catch (e) {
+                        colsEntry = colsEntry.replace(/[\[\]]/g, '').split(',').map(x => x.trim()).filter(Boolean).map(x => Number(x));
+                    }
+                }
+                colsEntry = Array.isArray(colsEntry) ? colsEntry.map(n => Number(n)) : [];
+
+                const manualStr = (typeof crManual[i] === 'string') ? crManual[i] : (crManual[i] == null ? '' : String(crManual[i]));
+                const fdsStr = (typeof crFds[i] === 'string') ? crFds[i] : (crFds[i] == null ? '' : String(crFds[i]));
+
+                // Create wrapper in origMode so it behaves as "original replacement"
+                let w;
+                try {
+                    // Orig Mode: true (hide header/delete button), initial Columns: previous decomposed columns
+                    w = createDecomposedTable({
+                        origMode: true,
+                        initialColumns: colsEntry,
+                        initialManualData: manualStr,
+                        initialFds: fdsStr,
+                    });
+
+                    // Finalize the header assignment: Relation R1, R2, ...
+                    const titleElement = w.querySelector('h3');
+                    if(titleElement) {
+                        titleElement.textContent = `Relation R${restoreTableCounter}:`;
+                    }
+
+                    // Add a CSS class to make the newly created wrapper look like the "original table"
+                    w.classList.add('orig-as-decomposed-row-item');
+
+                } catch (e) {
+                    console.error('createDecomposedTable failed during restore', e);
+                    continue;
+                }
+
+                // Ensure dataset.projectedFds set and FD list visible
+                try {
+                    const fdListToStore = (fdsStr && fdsStr.length > 0) ? (fdsStr.split(/[;\\r\\n]+/).map(s => s.trim()).filter(Boolean)) : [];
+                    w.dataset.projectedFds = JSON.stringify(fdListToStore);
+                } catch (e) {
+                    try { w.dataset.projectedFds = '[]'; } catch (e2) {}
+                }
+            }
+            // Visible decContainer
+            if (decContainer) {
+                decContainer.style.display = 'flex';
+                decContainer.style.flexDirection = 'row';
+                decContainer.style.flexWrap = 'wrap';
+            }
+            }
+        }  catch (e) {
+        console.warn('Restore (decomposed-as-original) failed', e);
     }
 
     // Warnings area (for missing column messages)
@@ -143,7 +502,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!warningsArea) {
         warningsArea = document.createElement('div');
         warningsArea.id = 'normalizeWarnings';
-        // Basic styling (can be moved to CSS file)
         warningsArea.style.margin = '16px 0 8px 0';
         warningsArea.style.display = 'none';
         warningsArea.style.background = '#fff7ed';
@@ -153,13 +511,9 @@ document.addEventListener('DOMContentLoaded', () => {
         warningsArea.style.color = '#7a2e00';
         warningsArea.style.width = '100%';
         warningsArea.style.boxSizing = 'border-box';
-
-        // Insert *after* decomposed tables container so message appears below the decomposed tables
         if (decContainer && decContainer.parentNode) {
-            // put warningsArea immediately after decContainer
             decContainer.parentNode.insertBefore(warningsArea, decContainer.nextSibling);
         } else if (computeAllBtn && computeAllBtn.parentNode) {
-            // fallback near compute button
             computeAllBtn.parentNode.insertBefore(warningsArea, computeAllBtn.nextSibling);
         } else {
             document.body.appendChild(warningsArea);
@@ -175,39 +529,17 @@ document.addEventListener('DOMContentLoaded', () => {
         warningsArea.style.display = 'none';
     }
 
-    function showGlobalDpLj(dpFlag, ljFlag) {
-        // Build HTML used in the warningsArea
-        const parts = [];
-        if (dpFlag === true) {
-            parts.push('<p class="ok">✓ Dependency-Preserving provided!</p>');
-        } else {
-            parts.push('<p class="warning">⚠ Dependency-Preserving not provided!</p>');
-        }
-        if (ljFlag === true) {
-            parts.push('<p class="ok">✓ Lossless-Join provided!</p>');
-        } else {
-            parts.push('<p class="error">❌ Lossless-Join not provided!</p>');
-        }
-        showWarning(parts.join(''));
-        try { warningsArea.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
-    }
-
-    // parse projectedFds stored in wrapper.dataset.projectedFds
+    // Parse projectedFds stored in wrapper.dataset.projectedFds
     function parseProjectedFdsValue(val) {
         if (!val) return [];
-        // if already an array-encoded JSON
         if (typeof val === 'string') {
             const trimmed = val.trim();
-            // try JSON.parse first
             try {
                 const parsed = JSON.parse(trimmed);
                 if (Array.isArray(parsed)) {
                     return parsed.map(String).filter(s => s && s.trim()).map(s => s.trim());
                 }
-            } catch (e) {
-                // not JSON then continue
-            }
-            // semicolon separated or newline separated list
+            } catch (e) {}
             const parts = trimmed.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean);
             return parts;
         }
@@ -217,14 +549,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return [];
     }
 
-    // Collect projected FDs from a wrapper (returns array of strings)
     function readProjectedFdsFromWrapper(wrapper) {
         if (!wrapper) return [];
         const raw = wrapper.dataset.projectedFds;
         return parseProjectedFdsValue(raw);
     }
 
-    // Merge arrays and remove duplicates while keeping order
     function uniqConcat(arrays) {
         const seen = new Set();
         const out = [];
@@ -242,7 +572,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return out;
     }
 
-    // fetchProjectedFDs, ask backend for projected FDs for given columns and store them in wrapper.dataset.projectedFds
     async function fetchProjectedFDs(wrapper, cols) {
         if (!cols || cols.length === 0) {
             try { wrapper.dataset.projectedFds = JSON.stringify([]); } catch (e) { wrapper.dataset.projectedFds = '[]'; }
@@ -278,41 +607,201 @@ document.addEventListener('DOMContentLoaded', () => {
             fallbackOnBody: true,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
-            onStart: () => {
-                // start timer when user begins dragging a column
-                startTimer();
-            },
-            onEnd: () => {
-                // increment attempt as before
-                fetch('/normalize/incrementAttempt', { method: 'POST' })
-                    .then(res => res.json())
-                    .then(json => { if (attemptEl) attemptEl.textContent = json.attempts; })
-                    .catch(console.error);
-            }
         });
     } else {
         console.warn('SortableJS not loaded');
     }
 
-    // Show FDs button process, fill each wrapper's right-side FD list from wrapper.dataset.projectedFds
-    showFdsBtn.addEventListener('click', () => {
+    function getCoveredColumns() {
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        const covered = new Set();
+        wrappers.forEach(w => {
+            try {
+                const cols = JSON.parse(w.dataset.columns || '[]');
+                if (Array.isArray(cols)) cols.forEach(c => covered.add(Number(c)));
+            } catch (e) {}
+        });
+        return covered;
+    }
+
+    // Section for check decomposition button
+    // Select the required HTML element
+    const checkDecompositionBtn = document.getElementById('checkDecompositionBtn');
+    // Function to check if columns are covered
+    function checkColumnCoverage() {
         const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
         if (wrappers.length === 0) {
-            alert('No decomposed tables yet.');
+            return { valid: false, message: 'Error: No decomposed tables exist yet.' };
+        }
+        const covered = getCoveredColumns();
+        const missing = [];
+        for (let i = 0; i < colCount; i++) {
+            if (!covered.has(i)) {
+                missing.push(i + 1);
+            }
+        }
+        if (missing.length > 0) {
+            return {
+                valid: false,
+                message: `Error: The following columns from the original table are missing: ${missing.join(', ')}.`
+            };
+        }
+        return { valid: true, message: '✓ All original columns are covered by the decomposition.' };
+    }
+
+    // Function that runs decomposition checks (Lossless-Join and Dependency-Preserving)
+    async function runDecompositionChecks() {
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        const tablesPayload = wrappers.map(w => ({
+            columns: JSON.parse(w.dataset.columns || '[]')
+        }));
+        const bodyObj = { tables: tablesPayload, fds: (window.fdListWithClosure || window.fdList || '') };
+        try {
+            const resp = await fetch('/normalize/decompose-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyObj)
+            });
+            const json = await resp.json();
+            window._lastDecomposeResult = json; // Keep for possible future use
+            const ljValid = json.ljPreserved === true;
+            const dpValid = json.dpPreserved === true;
+            const ljMessage = ljValid
+                ? '✓ The decomposition fulfill the lossless join property.'
+                : 'Error: The decomposition does not fulfill the lossless join property.';
+
+            const dpMessage = dpValid
+                ? 'The decomposition is dependency-preserving.'
+                : 'The decomposition is not dependency-preserving.';
+            return {
+                ljValid: ljValid,
+                ljMessage: ljMessage,
+                dpValid: dpValid,
+                dpMessage: dpMessage,
+                rawResponse: json // Pass the response for renderDpLjStatus
+            };
+        } catch (err) {
+            return {
+                ljValid: false,
+                ljMessage: 'Server Error: Could not check for lossless join.',
+                dpValid: false,
+                dpMessage: 'Server Error: Could not check for dependency preserving.',
+                rawResponse: null
+            };
+        }
+    }
+
+    // Safe reset
+    function clearDpLjStatus() {
+        const dpLjStatusBox = document.getElementById('dpLjStatusBox');
+        if (dpLjStatusBox) {
+            dpLjStatusBox.style.display = 'none';
+        }
+        const dpLjMessages = document.getElementById('dpLjMessages');
+        if (dpLjMessages) {
+            dpLjMessages.innerHTML = '';
+        }
+    }
+
+    // Function that lock decomposed tables
+    function lockDecomposedTables() {
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        wrappers.forEach(w => {
+            // Disable Sortable property in table header (prevents adding/removing/sorting columns)
+            const headRow = w.querySelector('table thead tr');
+            if (headRow && headRow.sortableInstance) {
+                // Disable SortableJS completely (disabling adding/deleting/ordering on the decomposed tables)
+                headRow.sortableInstance.option('disabled', true);
+            }
+            // Hide "Remove Table" button
+            const removeBtn = w.querySelector('.remove-table-btn');
+            if (removeBtn) {
+                removeBtn.style.display = 'none';
+            }
+            // Hide individual column delete (X) buttons in table headers
+            const deleteBtns = w.querySelectorAll('.delete-col-btn');
+            deleteBtns.forEach(btn => btn.style.display = 'none');
+            // Add a class to the table indicating that it is locked
+            w.classList.add('locked-decomposition');
+        });
+        // Hide global "+Add Table" button
+        const addTableBtn = document.getElementById('addTable');
+        if (addTableBtn) {
+            addTableBtn.style.display = 'none';
+        }
+        // Prevent column dragging from original table
+        const origHeadRow = document.getElementById('originalTableContainer')?.querySelector('table thead tr');
+        if (origHeadRow && origHeadRow.sortable) {
+            // Disable cloning/pulling of original table
+            origHeadRow.sortable.option('group', { name: 'columns', pull: false, put: false });
+        }
+    }
+
+    // Unlocks decomposed tables modifications (for "Change Decomposition" button)
+    function unlockDecomposedTables() {
+        // Clear the status box
+        clearDpLjStatus();
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        wrappers.forEach(w => {
+            // Re-enable Sortable (for drag-and-drop operations)
+            const headRow = w.querySelector('table thead tr');
+            if (headRow && headRow.sortableInstance) {
+                headRow.sortableInstance.option('disabled', false);
+            }
+            // Show the "Remove Table" and "Delete Column(X)" buttons again
+            const removeBtn = w.querySelector('.remove-table-btn');
+            if (removeBtn) {
+                removeBtn.style.display = 'block';
+            }
+            const deleteBtns = w.querySelectorAll('.delete-col-btn');
+            deleteBtns.forEach(btn => btn.style.display = 'block');
+            // Remove lock class
+            w.classList.remove('locked-decomposition');
+            // Clear FD list
+            const fdUl = w.querySelector('.fd-list-container ul');
+            if (fdUl) {
+                fdUl.innerHTML = '';
+            }
+        });
+        // Show "+Add Table" button again
+        if (addTableBtn) {
+            addTableBtn.style.display = 'inline-block';
+        }
+        // Re-enable column dragging from original table
+        const origHeadRow = document.getElementById('originalTableContainer')?.querySelector('table thead tr');
+
+        if (origHeadRow && typeof Sortable !== 'undefined' && origHeadRow.sortable) {
+            origHeadRow.sortable.option('group', { name: 'columns', pull: 'clone', put: false });
+        }
+
+        // Manage buttons, show Check Decomposition, hide others
+        if (checkDecompositionBtn) {
+            checkDecompositionBtn.style.display = 'inline-block';
+        }
+        if (changeDecompositionBtn) {
+            changeDecompositionBtn.style.display = 'none';
+        }
+        if (computeAllBtn) {
+            computeAllBtn.style.display = 'none';
+        }
+        if (continueNormalizationBtn) {
+            continueNormalizationBtn.style.display = 'none';
+        }
+    }
+
+    // Show FDs of decomposed tables
+    function showAllDecomposedFds() {
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        if (wrappers.length === 0) {
             return;
         }
         wrappers.forEach(w => {
             const fdContainer = w.querySelector('.fd-list-container');
             const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
             if (!fdUl) return;
-
-            // get stored projected FDs (computed earlier with fetchProjectedFDs at onAdd/onEnd)
             let proj = [];
-            try {
-                proj = readProjectedFdsFromWrapper(w);
-            } catch (e) {
-                proj = [];
-            }
+            // Writes the FDs stored (projected) on the wrapper to fd-list
+            try { proj = readProjectedFdsFromWrapper(w); } catch (e) { proj = []; }
             fdUl.innerHTML = '';
             proj.forEach(s => {
                 const li = document.createElement('li');
@@ -320,124 +809,181 @@ document.addEventListener('DOMContentLoaded', () => {
                 fdUl.appendChild(li);
             });
         });
-    });
-
-    // Helper to collect union of all selected columns across wrappers
-    function getCoveredColumns() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-        const covered = new Set();
-        wrappers.forEach(w => {
-            try {
-                const cols = JSON.parse(w.dataset.columns || '[]');
-                if (Array.isArray(cols)) {
-                    cols.forEach(c => covered.add(Number(c)));
-                }
-            } catch (e) {}
-        });
-        return covered;
     }
 
-    // Compute All button handler (uses /decompose-all)
+    // Click event for the "Check Decomposition" button
+    if (checkDecompositionBtn) {
+        checkDecompositionBtn.addEventListener('click', async () => {
+
+            // Lock UI during operation
+            document.body.style.cursor = 'wait';
+            checkDecompositionBtn.disabled = true;
+
+            // Safely reset DP/LJ state
+            clearDpLjStatus();
+
+            // Variables that will hold the results
+            const messages = [];
+
+            // First control, column coverage
+            const coverageResult = checkColumnCoverage();
+            const isCoverageValid = coverageResult.valid;
+
+            if (!isCoverageValid) {
+
+                let finalMessage = "Decomposition Check Results:\n\n";
+                finalMessage += "• " + coverageResult.message.replace('Error:', 'ERROR:');
+                finalMessage += "\n\n------------------------------------\n";
+                finalMessage += "Please revise your decomposition based on the errors.";
+
+                // Return the interface to normal
+                document.body.style.cursor = 'default';
+                checkDecompositionBtn.disabled = false;
+
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Check Failed: Incomplete Decomposition',
+                    html: finalMessage.replace(/\n/g, '<br>'),
+                    confirmButtonText: 'Close'
+                });
+                return;
+            }
+
+            // Second control, Lossless-Join & Dependency-Preserving
+            const allChecksResult = await runDecompositionChecks();
+            const isLosslessValid = allChecksResult.ljValid;
+
+            if (!isLosslessValid) {
+                let finalMessage = "Decomposition Check Results:\n\n";
+                finalMessage += "• " + allChecksResult.ljMessage.replace('Error:', 'ERROR:');
+                finalMessage += "\n\n------------------------------------\n";
+                finalMessage += "Please revise your decomposition based on the errors.";
+
+                // Return the interface to normal
+                document.body.style.cursor = 'default';
+                checkDecompositionBtn.disabled = false;
+
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Check Failed: Lossy Join',
+                    html: finalMessage.replace(/\n/g, '<br>'),
+                    confirmButtonText: 'Close'
+                });
+                return;
+            }
+
+            let finalMessage = "Decomposition Check Results:\n\n";
+            finalMessage += "• " + coverageResult.message;
+            finalMessage += "\n• " + allChecksResult.ljMessage;
+            finalMessage += "\n\n------------------------------------\n";
+            finalMessage += "Your decomposition is valid so far!";
+
+            // Return the interface to normal
+            document.body.style.cursor = 'default';
+            checkDecompositionBtn.disabled = false;
+
+            // Show results to user
+            Swal.fire({
+                icon: 'info',
+                title: 'Decomposition Valid',
+                html: finalMessage.replace(/\n/g, '<br>'),
+                confirmButtonText: 'Continue'
+            });
+
+            if (allChecksResult.rawResponse) {
+                renderDpLjStatus(allChecksResult.rawResponse);
+            }
+
+
+            // Locking after successful check
+            lockDecomposedTables();
+
+            // Automatically show functional dependencies in decomposed tables
+            showAllDecomposedFds();
+
+            // If successful, manage buttons, "Check Decomposition" hide, "Change Decomposition" show
+            if (checkDecompositionBtn) {
+                checkDecompositionBtn.style.display = 'none';
+            }
+            if (changeDecompositionBtn) {
+                changeDecompositionBtn.style.display = 'inline-block';
+            }
+
+            // If successful, show "Compute Plaque" button
+            const computeRicBtn = document.getElementById('computeAllBtn');
+            if (computeRicBtn) {
+                computeRicBtn.style.display = 'inline-block';
+            }
+        });
+    }
+
+    // "Change Decomposition" button event listener
+    if (changeDecompositionBtn) {
+        changeDecompositionBtn.addEventListener('click', async () => {
+            const result = await Swal.fire({
+                title: 'Confirm Change',
+                text: 'Are you sure you want to change the decomposition? All calculation results will be reset.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Yes, change it!'
+            });
+
+            if (result.isConfirmed) {
+                unlockDecomposedTables();
+                Swal.fire('Reset!', 'Decomposition is now editable.', 'info');
+            }
+        });
+    }
+
+    // Compute All button
     computeAllBtn.addEventListener('click', async () => {
         const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-        if (wrappers.length === 0) { alert('There are no decomposed tables yet.'); return; }
+        if (wrappers.length === 0) {
+            Swal.fire({
+            icon: 'warning',
+            title: 'No Tables',
+            text: 'There are no decomposed tables yet.',
+            confirmButtonText: 'Close'
+        }); return; }
 
-        // validation, ensure union of decomposed columns covers all original columns
-        clearWarning();
-        const covered = getCoveredColumns();
-        const missing = [];
-        for (let i = 0; i < colCount; i++) {
-            if (!covered.has(i)) missing.push(i);
-        }
-        if (missing.length > 0) {
-            const missingOneBased = missing.map(x => x + 1);
-            const alertMsg =
-                'Calculation canceled:\n' +
-                'Not all columns in the original table are covered by the decomposed tables.\n' +
-                'Misssing column(s): ' + missingOneBased.join(', ') + '\n' +
-                'Please add the missing columns to the decomposed tables or update the existing decomposed tables.';
-            alert(alertMsg);
-            return;
-        }
-
-        // Build tables payload (columns + manualData per wrapper) and collect per-wrapper fds
+        // Build tablesPayload for global decompose-all
         const tablesPayload = [];
         const perTableFdsArrays = [];
-
         for (const w of wrappers) {
             let cols = [];
             try { cols = JSON.parse(w.dataset.columns || '[]'); } catch (e) { cols = []; }
-
-            // Build projected FDs for this wrapper (if precomputed)
             const projFds = readProjectedFdsFromWrapper(w);
             perTableFdsArrays.push(projFds || []);
-
             if (!cols || cols.length === 0) {
-                tablesPayload.push({
-                    columns: [],
-                    manualData: '',
-                    fds: projFds.join(';'),
-                    timeLimit: parseInt(timeLimitInput?.value || '30', 10),
-                    monteCarlo: false,
-                    samples: 0
-                });
+                tablesPayload.push({ columns: [], manualData: '', fds: projFds.join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
                 continue;
             }
-
-            // Build manualData for this wrapper (deduped unique tuples)
             const seen = new Set();
             const manualRows = [];
             originalRows.forEach(row => {
                 const tupArr = cols.map(i => (row[i] !== undefined ? String(row[i]) : ''));
                 const key = tupArr.join('|');
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    manualRows.push(tupArr.join(','));
-                }
+                if (!seen.has(key)) { seen.add(key); manualRows.push(tupArr.join(',')); }
             });
             const manualData = manualRows.join(';');
-
-            tablesPayload.push({
-                columns: cols,
-                manualData: manualData,
-                fds: projFds.join(';'),
-                timeLimit: parseInt(timeLimitInput?.value || '30', 10),
-                monteCarlo: false,
-                samples: 0
-            });
+            tablesPayload.push({ columns: cols, manualData: manualData, fds: projFds.join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
         }
 
-        // Build top-level FD string:
-        // Priority: window.fdListWithClosure -> window.fdList -> merge per-table projected fds
+        // Top-level FDs
         let topLevelFdsArr = [];
         try {
-            if (typeof window !== 'undefined') {
-                if (window.fdListWithClosure && String(window.fdListWithClosure).trim()) {
-                    // fdListWithClosure could be a string with separators ; or \n
-                    topLevelFdsArr = parseProjectedFdsValue(window.fdListWithClosure);
-                } else if (window.fdList && String(window.fdList).trim()) {
-                    topLevelFdsArr = parseProjectedFdsValue(window.fdList);
-                }
+            if (window.fdListWithClosure && String(window.fdListWithClosure).trim()) {
+                topLevelFdsArr = parseProjectedFdsValue(window.fdListWithClosure);
+            } else if (window.fdList && String(window.fdList).trim()) {
+                topLevelFdsArr = parseProjectedFdsValue(window.fdList);
             }
-        } catch (e) {
-            topLevelFdsArr = [];
-        }
-
-        if (topLevelFdsArr.length === 0) {
-            // fallback: merge per-table projected fds
-            topLevelFdsArr = uniqConcat(perTableFdsArrays);
-        }
-
-        // final top-level fd string
-        const topLevelFdsString = topLevelFdsArr.join(';');
-
-        // If there are no FDs even now, still submit,
-        // but sending top-level empty string would cause ric main to report "FDs: none".
-        // So we send whatever we have.
-        const bodyObj = { tables: tablesPayload, fds: topLevelFdsString };
-
-        startTimer();
+        } catch (e) { topLevelFdsArr = []; }
+        if (topLevelFdsArr.length === 0) topLevelFdsArr = uniqConcat(perTableFdsArrays);
+        const bodyObj = { tables: tablesPayload, fds: topLevelFdsArr.join(';') };
         try {
+            // Call global endpoint for dp/lj + unionCols metadata
             const resp = await fetch('/normalize/decompose-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -445,140 +991,126 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!resp.ok) {
-                // If server enforces LJ, it may return 400 with an error message; show to user
                 const txt = await resp.text();
-                alert('Decomposition not accepted: ' + (txt || resp.statusText));
-                stopTimer();
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Decomposition Not Accepted',
+                    text: 'Decomposition not accepted: ' + (txt || resp.statusText),
+                    confirmButtonText: 'Close'
+                });
                 return;
             }
 
             const json = await resp.json();
-            const globalDp = Boolean(json.dpPreserved);
-            const globalLj = Boolean(json.ljPreserved);
-            showGlobalDpLj(globalDp, globalLj);
-
-            // globalRic and tableResults are expected
-            const globalRic = Array.isArray(json.globalRic) ? json.globalRic : [];
-            const tableResults = Array.isArray(json.tableResults) ? json.tableResults : [];
-
-            // update per-wrapper FD list using server-returned tableResults.projectedFDs (if present)
-            // This ensures UI shows authoritative projected FDs from server
-            const wrappersList = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-            for (let i = 0; i < wrappersList.length; i++) {
-                const w = wrappersList[i];
-                const fdContainer = w.querySelector('.fd-list-container');
-                const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
-                if (!fdUl) continue;
-                fdUl.innerHTML = '';
-                const tr = tableResults[i] || {};
-                const projList = Array.isArray(tr.projectedFDs) ? tr.projectedFDs : (tr.projectedFDs === undefined ? [] : tr.projectedFDs);
-                // fallback: if server didn't provide, keep wrapper.dataset.projectedFds
-                const listToUse = (projList && projList.length > 0) ? projList : readProjectedFdsFromWrapper(w);
-                listToUse.forEach(s => {
-                    const li = document.createElement('li');
-                    li.textContent = s;
-                    fdUl.appendChild(li);
-                });
-                // Also store back to dataset for future usage
-                try { w.dataset.projectedFds = JSON.stringify(listToUse); } catch (e) {}
-            }
-
-            // Use server-provided unionCols if present, else fallback
-            let unionCols = Array.isArray(json.unionCols) && json.unionCols.length > 0
-                ? json.unionCols.map(n => Number(n))
-                : Array.from(new Set([].concat(...tablesPayload.map(t => t.columns)))).map(n => Number(n));
-            unionCols.sort((a,b)=>a-b);
-
-            // globalManualRows: each element is a comma-separated tuple in the same order as unionCols
-            const globalManualRows = Array.isArray(json.globalManualRows) ? json.globalManualRows.map(s => String(s)) : [];
-
-            // Build unionManualTuples: array of arrays of strings aligned with unionCols
-            const unionManualTuples = globalManualRows.map(s => s.split(',').map(x => (x==null? '' : String(x).trim())));
-
-            // Build per-wrapper first-occurrence maps (projected tuple -> index in unionManualTuples)
-            const wrapperFirstIndexMaps = [];
-            for (const t of tablesPayload) {
-                const cols = Array.isArray(t.columns) ? t.columns.map(Number) : [];
-                const map = new Map();
-                for (let r = 0; r < unionManualTuples.length; r++) {
-                    const unionRow = unionManualTuples[r];
-                    const projectedParts = cols.map(c => {
-                        const pos = unionCols.indexOf(Number(c)); // position of this column in unionCols
-                        return (pos >= 0 && unionRow[pos] !== undefined) ? unionRow[pos] : '';
-                    });
-                    const key = projectedParts.join('|');
-                    if (!map.has(key)) map.set(key, r);
-                }
-                wrapperFirstIndexMaps.push(map);
-            }
-
-            // Render per-wrapper table bodies using globalRic
+            window._lastDecomposeResult = json;
+            // For each wrapper, compute per-table RIC with single-table endpoint and update UI
             for (let i = 0; i < wrappers.length; i++) {
                 const w = wrappers[i];
-                const cols = tablesPayload[i].columns || [];
-                const warnDiv = w.querySelector('.decompose-warnings');
-                const tbody = w.querySelector('table tbody');
-
-                // Clear previous warning & FD list
-                if (warnDiv) warnDiv.innerHTML = '';
-
-                // Build uniqueTuples for this wrapper
-                const seen = new Set();
-                const uniqueTuples = [];
-                originalRows.forEach(row => {
-                    const tupArr = cols.map(i => (row[i] !== undefined ? String(row[i]) : ''));
-                    const key = tupArr.join('|');
-                    if (!seen.has(key)) {
-                        seen.add(key);
-                        uniqueTuples.push(tupArr);
-                    }
-                });
-
-                // For mapping from wrapper column index -> index in unionCols (globalRic column index)
-                const colIndicesInUnion = cols.map(c => unionCols.indexOf(c));
-
-                // Render tbody using mapping to globalRic
-                if (tbody) {
-                    tbody.innerHTML = '';
-                    for (let r = 0; r < uniqueTuples.length; r++) {
-                        const tr = tbody.insertRow();
-                        const tupArr = uniqueTuples[r];
-                        // find global row index with first-occurrence map
-                        const key = tupArr.join('|');
-                        const firstMap = wrapperFirstIndexMaps[i];
-                        const globalRowIdx = firstMap.has(key) ? firstMap.get(key) : -1;
-
-                        for (let cIdx = 0; cIdx < cols.length; cIdx++) {
-                            const td = tr.insertCell();
-                            td.textContent = tupArr[cIdx];
-                            td.dataset.origIdx = cols[cIdx];
-
-                            let ricVal = NaN;
-                            if (globalRowIdx >= 0 && globalRic[globalRowIdx] !== undefined) {
-                                const gColIdx = colIndicesInUnion[cIdx];
-                                if (gColIdx >= 0) {
-                                    ricVal = parseFloat(globalRic[globalRowIdx]?.[gColIdx]);
-                                }
-                            }
-
-                            if (!isNaN(ricVal) && ricVal < 1) {
-                                td.classList.add('plaque-cell');
-                                const lightness = 10 + 90 * ricVal;
-                                td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
-                            } else {
-                                td.style.backgroundColor = 'white';
-                                td.classList.remove('plaque-cell');
-                            }
-                        }
-                    }
+                try {
+                    console.log('computeAll: now computing per-table RIC for wrapper idx=', i);
+                    // computeRicForWrapper will fetch /normalize/decompose and update that wrapper's tbody/fd-list
+                    await computeRicForWrapper(w);
+                    console.log('computeAll: per-table RIC complete for wrapper idx=', i);
+                } catch (e) {
+                    console.warn('computeAll: per-table RIC failed for wrapper idx=', i, e);
                 }
+
+                // Update fd-list from global tableResults if available, but don't overwrite already-rendered table body
+                const fdContainer = w.querySelector('.fd-list-container');
+                const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
+                const tr = (Array.isArray(json.tableResults) && json.tableResults[i]) ? json.tableResults[i] : {};
+                const projList = Array.isArray(tr.projectedFDs) ? tr.projectedFDs : (tr.projectedFDs === undefined ? [] : tr.projectedFDs);
+                const listToUse = (projList && projList.length > 0) ? projList : (readProjectedFdsFromWrapper(w) || []);
+                if (fdUl) {
+                    fdUl.innerHTML = '';
+                    listToUse.forEach(s => {
+                        const li = document.createElement('li');
+                        li.textContent = String(s);
+                        fdUl.appendChild(li);
+                    });
+                }
+                try { w.dataset.projectedFdsOrig = JSON.stringify(listToUse); } catch (e) {}
             }
 
-            stopTimer();
-            alert('Relational information content calculation completed for all decomposed tables.');
+            // Check the BCNF flag
+            const isBcnf = window._lastDecomposeResult && window._lastDecomposeResult.bcnfdecomposition === true;
+
+            // Show the calculation success message (after pressing "Compute Plaque" button) and wait for it to close
+            await Swal.fire({
+                icon: 'success',
+                title: 'Calculation Complete!',
+                text: 'Relational information content calculation completed for all decomposed tables.',
+                confirmButtonText: 'OK'
+            });
+            // ------------------------------------------------------------------------------------
+
+            if (isBcnf) {
+                // If BCNF: Show the modal that will get the username
+                // Calculate the total elapsed time
+                const CURRENT_TIME_MS = Date.now();
+                // Calculate the total elapsed time in seconds
+                const finalElapsedSecs = Math.max(0, Math.floor((CURRENT_TIME_MS - SESSION_START_TIME_MS) / 1000));
+
+                // Collect data
+                const finalAttempts = parseInt(attemptEl?.textContent || '0', 10);
+                const finalElapsed = finalElapsedSecs;
+                const { value: userName } = await Swal.fire({
+                    title: 'Normalization Complete! (BCNF)',
+                    text: 'Congratulations! The decomposition process is finished. Please enter your name to save the results.',
+                    icon: 'success',
+                    input: 'text',
+                    inputLabel: 'Your Name:',
+                    inputValidator: (value) => {
+                        if (!value) {
+                            return 'You must enter your name!';
+                        }
+                    },
+                    confirmButtonText: 'Save and Finish'
+                });
+
+                if (userName) {
+                    // Make the logging API call
+                    await fetch(`/normalize/log-success?userName=${encodeURIComponent(userName.trim())}&attempts=${finalAttempts}&elapsedTime=${finalElapsed}`, {
+                        method: 'POST'
+                    }).then(res => {
+                        if (res.ok) {
+                            // Notify if logging was successful
+                            Swal.fire('Success!', `Results are saved`, 'success');
+                        } else {
+                            Swal.fire('Logging Failed', 'Could not save the results to the log.', 'error');
+                        }
+                    }).catch(err => {
+                        Swal.fire('Network Error', 'Failed to connect to logging service.', 'error');
+                    });
+                } else {
+                    // Refused/canceled entering username
+                    Swal.fire('Log Skipped', 'Results were not saved.', 'info');
+                }
+
+
+                // End the stream
+                if (computeAllBtn) computeAllBtn.style.display = 'none';
+                if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
+                if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'inline-block';
+
+                return;
+            }
+
+            // If not BCNF, continue to flow (hide Compute Plaque button, show Continue to Normalization)
+            if (computeAllBtn) {
+                computeAllBtn.style.display = 'none';
+            }
+            if (continueNormalizationBtn) {
+                continueNormalizationBtn.style.display = 'inline-block';
+            }
         } catch (err) {
             console.error('decompose-all failed', err);
-            alert('Server error while computing RIC: ' + (err.message || err));
+            Swal.fire({
+                icon: 'error',
+                title: 'Server Error',
+                text: 'Server error while computing RIC: ' + (err.message || err),
+                confirmButtonText: 'Close'
+            });
             stopTimer();
         }
     });
@@ -589,30 +1121,54 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Helper function to create a new decomposed table
-    // returns the created wrapper so it can be restored by undo logic
-    function createDecomposedTable() {
-        // Checking the exist wrapper numbers
-        let allWrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-        let usedNumbers = new Set();
-        allWrappers.forEach(w => {
-            let num = parseInt(w.querySelector('h3').textContent.match(/\d+/)?.[0] || 0);
-            if (!isNaN(num)) usedNumbers.add(num);
-        });
+    // Helper function to create a new decomposed table (opts supported)
+    //   origMode: boolean (if true, wrapper hides title/local add/remove and shows footer controls)
+    //   initialColumns: array of numbers
+    //   initialManualData: "a,b,c;d,e,f"
+    //   initialFds: string
+    function createDecomposedTable(opts = {}) {
+        const origMode = !!opts.origMode;
+        const initialCols = Array.isArray(opts.initialColumns) ? opts.initialColumns.map(n => Number(n)) : null;
 
-        // Finding new number and taking new number starting from 1
-        let newNumber = 1;
-        while (usedNumbers.has(newNumber)) {
-            newNumber++;
+        let rawManualData = opts.initialManualData;
+        if (Array.isArray(rawManualData) && rawManualData.length > 0) {
+            rawManualData = rawManualData[0];
+        }
+
+        const initialManualData = (typeof rawManualData === 'string') ? rawManualData : null;
+        const initialFds = (typeof opts.initialFds === 'string') ? opts.initialFds : null;
+
+        let newDecomposedNumber = 1;
+        if (!origMode) {
+            //  Only count 'Decomposed Table X' headers
+            const existingDecomposed = document.querySelectorAll('.decomposed-wrapper:not(.orig-as-original) h3');
+            const usedNumbers = new Set();
+            existingDecomposed.forEach(h3 => {
+                const m = h3.textContent.match(/\d+/);
+                const num = parseInt(m?.[0] || 0);
+                if (!isNaN(num)) usedNumbers.add(num);
+            });
+            while (usedNumbers.has(newDecomposedNumber)) newDecomposedNumber++;
         }
 
         const wrapper = document.createElement('div');
         wrapper.classList.add('decomposed-wrapper');
+        if (origMode) wrapper.classList.add('orig-as-original');
 
         // Title
         const title = document.createElement('h3');
-        title.textContent = `Decomposed Table ${newNumber}:`;
+        if (!origMode) {
+            // New created decomposed table
+            title.textContent = `Decomposed Table ${newDecomposedNumber}:`;
+        } else {
+            // Restored table: R# assignment will be made in the restore block
+            title.textContent = `Relation R:`;
+        }
         wrapper.appendChild(title);
+
+        wrapper.style.minWidth = '300px';
+        wrapper.style.marginRight = '20px';
+        wrapper.style.marginBottom = '20px';
 
         // Content container (table + FD list side-by-side)
         const content = document.createElement('div');
@@ -640,64 +1196,79 @@ document.addEventListener('DOMContentLoaded', () => {
         const fdTitle = document.createElement('h4');
         fdTitle.textContent = 'Functional Dependencies';
         const fdUl = document.createElement('ul');
-        fdUl.id = `fdList-${newNumber}`;
+        fdUl.id = `fdList-${Math.floor(Math.random() * 100000)}`;
         fdContainer.appendChild(fdTitle);
         fdContainer.appendChild(fdUl);
         content.appendChild(fdContainer);
 
-        // Warning container, just one for each wrapper
+        // Warning container
         const warnDiv = document.createElement('div');
         warnDiv.classList.add('decompose-warnings');
         wrapper.appendChild(warnDiv);
 
-        // Add Table button per-wrapper (creating a new empty decomposed table)
-        const addBtn = document.createElement('button');
-        addBtn.classList.add('small');
-        addBtn.textContent = '+ Add Table';
-        addBtn.addEventListener('click', () => createDecomposedTable());
-        wrapper.appendChild(addBtn);
-
-        // Adding remove table button
+        // Remove button - shown only for normal mode
         const removeBtn = document.createElement('button');
         removeBtn.classList.add('small', 'remove-table-btn');
         removeBtn.textContent = 'Remove Table';
         removeBtn.style.float = 'right';
         removeBtn.style.marginLeft = '10px';
-        removeBtn.addEventListener('click', () => {
-            if (confirm('Do you want to delete this decomposed table?')) {
-                // Remove table completely
+        removeBtn.addEventListener('click', async () => {
+            const result = await Swal.fire({
+                title: 'Confirm Deletion',
+                text: 'Do you want to delete this decomposed table?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Yes, delete it!'
+            });
+            if (result.isConfirmed) {
                 wrapper.remove();
             }
         });
-        wrapper.appendChild(removeBtn);
+        if (!origMode) wrapper.appendChild(removeBtn);
 
         // Append wrapper to container
         decContainer.appendChild(wrapper);
 
-        // Storing columns initially as empty array on wrapper
+        // Dataset placeholders
         wrapper.dataset.columns = JSON.stringify([]);
-        // will be filled by fetchProjectedFDs
         wrapper.dataset.projectedFds = JSON.stringify([]);
+
+        // Store initialManualData on wrapper (for multi-stage flow)
+        if (initialManualData) {
+            wrapper.dataset.restoredManualData = initialManualData;
+        }
 
         // Per-table state
         let decomposedCols = [];
 
-        // Exposing external updater so removeColumnFromWrapper can call it
+        // External updater
         wrapper.updateFromColumns = function(newCols) {
             decomposedCols = Array.isArray(newCols) ? newCols.slice() : [];
             renderDecomposed();
         };
 
-        // Render function with deduplication and white rows
+        // Render function
         function renderDecomposed() {
-
-            // Building thead from decomposedCols
             headRow.innerHTML = '';
             decomposedCols.forEach(idx => {
                 const th = document.createElement('th');
-                th.textContent = idx + 1;
+                const colNum = (idx + 1);
+
+                // Add column delete button only in normal mode (origMode: false)
+                if (!origMode) {
+                    th.innerHTML = `
+                    <span>${colNum}</span>
+                    <button type="button" class="delete-col-btn" title="Remove column ${colNum}" data-orig-idx="${idx}">×</button>
+                `;
+                } else {
+                    th.innerHTML = `<span>${colNum}</span>`; // In restore mode, only show the column number
+                }
+
                 th.dataset.origIdx = idx;
                 th.setAttribute('data-orig-idx', String(idx));
+
                 headRow.appendChild(th);
             });
 
@@ -709,7 +1280,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const seen = new Set();
             originalRows.forEach(row => {
                 const tuple = decomposedCols.map(i => (row[i] !== undefined ? String(row[i]) : '')).join('|');
-                if (seen.has(tuple)) return; // skip duplicates
+                if (seen.has(tuple)) return;
                 seen.add(tuple);
                 const tr = tbody.insertRow();
                 decomposedCols.forEach(idx => {
@@ -717,15 +1288,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     td.textContent = row[idx];
                     td.style.backgroundColor = 'white';
                     td.dataset.origIdx = idx;
+                    td.classList.remove('plaque-cell');
+                    td.style.backgroundColor = 'white';
                 });
             });
             try { wrapper.dataset.columns = JSON.stringify(decomposedCols); } catch (e) { wrapper.dataset.columns = '[]'; }
         }
 
-        // Sortable on the headRow: accept clones from original and enable removal with onRemove
+        // Sortable on the headRow
         if (typeof Sortable !== 'undefined') {
-            Sortable.create(headRow, {
-                group: { name: 'columns', pull: true, put: true },
+            headRow.sortableInstance = Sortable.create(headRow, {
+                group: {
+                    name: 'columns',
+                    pull: (origMode ? 'clone' : true),
+                    // Allows the source to be only the original table header
+                    put: function (to, from, draggedElement) {
+                        // Check globally defined original table header (origHeadRow)
+                        return from.el === origHeadRow;
+                    }
+                },
                 animation: 150,
                 draggable: 'th',
                 sort: true,
@@ -736,10 +1317,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 onMove: (evt) => {
                     return evt.from === origHeadRow || evt.from === headRow;
                 },
-
-                onStart: () => {
-                },
-
                 onAdd: (evt) => {
                     const item = evt.item;
                     let idx = NaN;
@@ -757,7 +1334,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (!Number.isFinite(idx)) {
                         if (item && item.parentNode === headRow) item.remove();
-                        console.warn('Could not parse dropped column index, ignoring.');
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Column Parse Warning',
+                            text: 'Could not parse dropped column index, ignoring.',
+                            confirmButtonText: 'Close'
+                        });
                         return;
                     }
 
@@ -766,21 +1348,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    // Insert at newIndex relative to current columns
                     const insertAt = Math.max(0, Math.min(evt.newIndex, decomposedCols.length));
                     decomposedCols.splice(insertAt, 0, idx);
 
-                    // Cleanup the inserted clone then render
                     setTimeout(() => {
                         if (item && item.parentNode === headRow) item.remove();
                         renderDecomposed();
-                        // Recomputing projected FDs in background
                         fetchProjectedFDs(wrapper, decomposedCols);
                     }, 0);
                 },
 
                 onRemove: (evt) => {
-                    // An item was removed from this headRow
                     const item = evt.item;
                     let idx = NaN;
                     try {
@@ -804,14 +1382,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
 
                 onEnd: (evt) => {
-                    // Update order in case of reorder
                     decomposedCols = Array.from(headRow.children).map(th => parseInt(th.dataset.origIdx, 10));
 
-                    // Detecting if dropped outside the header row (for removal)
                     const dropX = evt.originalEvent && evt.originalEvent.clientX != null ? evt.originalEvent.clientX : 0;
                     const dropY = evt.originalEvent && evt.originalEvent.clientY != null ? evt.originalEvent.clientY : 0;
                     if (dropX === 0 && dropY === 0) {
-                        // Likely not a valid mouse drop, skip removal
                         renderDecomposed();
                         fetchProjectedFDs(wrapper, decomposedCols);
                         return;
@@ -819,29 +1394,208 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const rect = headRow.getBoundingClientRect();
                     const isInside = dropX >= rect.left && dropX <= rect.right && dropY >= rect.top && dropY <= rect.bottom;
-
-                    if (!isInside && evt.from === evt.to) {
-                        // Dropped outside: remove the column
-                        const idx = parseInt(evt.item.dataset.origIdx, 10);
-                        if (!isNaN(idx)) {
-                            evt.item.remove();
-                            decomposedCols = decomposedCols.filter(c => c !== idx);
-                        }
-                    }
-
-                    // Always re-render and fetch FDs
                     renderDecomposed();
                     fetchProjectedFDs(wrapper, decomposedCols);
                 }
             });
+
+            headRow.addEventListener('click', async (e) => {
+                const target = e.target;
+                if (!origMode && target.matches('.delete-col-btn')) {
+                    // Get origIdx from button
+                    const idxToDelete = parseInt(target.dataset.origIdx, 10);
+                    const result = await Swal.fire({
+                        title: 'Confirm Column Deletion',
+                        text: `Are you sure you want to delete column ${idxToDelete + 1}?`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#3085d6',
+                        confirmButtonText: 'Yes, delete it!'
+                    });
+
+                    if (result.isConfirmed) {
+                        // Remove from the state array (decomposedCols)
+                        decomposedCols = decomposedCols.filter(c => Number(c) !== idxToDelete);
+                        // Re-render the table headers and body
+                        renderDecomposed();
+                        // Recalculate FDs for the modified table
+                        fetchProjectedFDs(wrapper, decomposedCols);
+                    }
+                }
+            });
+
         } else {
             console.warn('SortableJS not loaded (decomp headRow)');
         }
 
-        // Initial render (empty)
-        renderDecomposed();
+        // Initial population from opts.initialColumns / initialManualData if present
+        if (initialCols && initialCols.length > 0) {
+            decomposedCols = initialCols.slice();
 
-        // Return wrapper so callers (restore) can set columns
+            // If we are in normal phase (first phase), just call renderDecomposed
+            if (!origMode) {
+                renderDecomposed();
+            }
+
+            // If we are in restore mode (origMode: true) or if there is manual data
+            if (origMode || (initialManualData && initialManualData.trim())) {
+                // Render titles, only if origMode is set to 0, manually draw the titles (since renderDecomposed is skipped)
+                    headRow.innerHTML = '';
+                    decomposedCols.forEach(idx => {
+                        const th = document.createElement('th');
+                        const colNum = (idx + 1);
+
+                        // Delete button in header, only add if originMode is not
+                        if (!origMode) {
+                            th.innerHTML = `
+                        <span>${colNum}</span>
+                        <button type="button" class="delete-col-btn" title="Remove column ${colNum}" data-orig-idx="${idx}">×</button>
+                    `;
+                        } else {
+                            th.innerHTML = `<span>${colNum}</span>`; // In restore mode, only show the column number
+                        }
+
+                        th.dataset.origIdx = idx;
+                        th.setAttribute('data-orig-idx', String(idx));
+                        headRow.appendChild(th);
+                    });
+
+
+                // Restore body, redraw body from initialManualData
+                if (initialCols && initialCols.length > 0 && initialManualData && initialManualData.trim()) {
+                    try {
+                        let manualDataToSplit = initialManualData;
+                        if (Array.isArray(initialManualData)) {
+                            manualDataToSplit = initialManualData.join(';');
+                        } else if (typeof initialManualData === 'string') {
+                            manualDataToSplit = initialManualData.trim();
+                        } else {
+                            manualDataToSplit = '';
+                        }
+
+                        const rows = initialManualData.split(';').map(r => r.split(',').map(c => (c == null ? '' : String(c).trim())));
+                        tbody.innerHTML = '';
+
+                        // Safely parse the RIC matrix and column mapping information from the PageController
+                        let globalRic = [];
+                        let unionCols = [];
+
+                        try { globalRic = JSON.parse(window.currentGlobalRic || '[]'); } catch (e) { globalRic = []; console.warn("Global RIC parse failed:", e); }
+                        try { unionCols = JSON.parse(window.currentUnionCols || '[]'); } catch (e) { unionCols = []; console.warn("Union Cols parse failed:", e); }
+
+                        for (let r = 0; r < rows.length; r++) {
+                            const rArr = rows[r];
+                            const tr = tbody.insertRow();
+                            for (let cIdx = 0; cIdx < decomposedCols.length; cIdx++) {
+                                const td = tr.insertCell();
+                                const origColIdx = decomposedCols[cIdx]; // Original column index of this table
+
+                                td.textContent = (rArr[cIdx] !== undefined ? rArr[cIdx] : '');
+                                td.dataset.origIdx = origColIdx;
+
+                                // Apply ric coloring
+                                let ricVal = NaN;
+
+                                // Find the column index in the globalRic matrix
+                                const globalRicColIndex = (unionCols && Array.isArray(unionCols)) ? unionCols.indexOf(origColIdx) : -1;
+
+                                // get RIC value: globalRic[row][global_column_index]
+                                if (globalRicColIndex !== -1 && Array.isArray(globalRic[r])) {
+                                    const v = globalRic[r][globalRicColIndex];
+                                    const parsed = parseFloat(v);
+                                    if (!isNaN(parsed)) ricVal = parsed;
+                                }
+
+                                if (!isNaN(ricVal) && ricVal < 1) {
+                                    td.classList.add('plaque-cell');
+                                    const lightness = 10 + 90 * ricVal;
+                                    td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                                } else {
+                                    td.style.backgroundColor = 'white';
+                                    td.classList.remove('plaque-cell');
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Manual data restore failed:", e);
+                    }
+                } else if (origMode) {
+                    // If originMode is active and initialManualData is empty, still clear tbody
+                    tbody.innerHTML = '';
+                }
+            }
+            try { wrapper.dataset.columns = JSON.stringify(decomposedCols); } catch(e) {}
+        }
+
+        // If initialFds provided, set dataset and fd-list
+        if (initialFds && initialFds.trim()) {
+            try {
+                const list = initialFds.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean);
+                wrapper.dataset.projectedFds = JSON.stringify(list);
+                const fdUlLocal = wrapper.querySelector('.fd-list-container ul');
+                if (fdUlLocal) {
+                    fdUlLocal.innerHTML = '';
+                    list.forEach(s => { const li = document.createElement('li'); li.textContent = s; fdUlLocal.appendChild(li); });
+                }
+            } catch(e) {}
+        }
+
+        // Per-Table Control Buttons in Restore Mode
+        if (origMode) {
+            const footer = document.createElement('div');
+            footer.classList.add('orig-as-decomposed-footer');
+            footer.style.textAlign = 'right';
+            footer.style.paddingTop = '10px';
+            footer.style.borderTop = '1px solid #ddd';
+
+            // +Add Decomposed Table button
+            const addTableLocalBtn = document.createElement('button');
+            addTableLocalBtn.classList.add('button', 'small', 'add-decomp-local-btn');
+            addTableLocalBtn.textContent = '+ Add Decomposed Table';
+            addTableLocalBtn.style.marginRight = '5px';
+            // Click logic, create the new table and insert it immediately after the existing table
+            addTableLocalBtn.addEventListener('click', () => {
+                // Count the decomposed (origMode: false) children immediately below this parent
+                let localCount = 0;
+                // Start from Parent's next sibling
+                let nextElement = wrapper.nextElementSibling;
+
+                // Count as long as nextElement exists and this element is not a 'decomposed-wrapper' and 'orig-as-original'
+                while(nextElement && nextElement.classList.contains('decomposed-wrapper') && !nextElement.classList.contains('orig-as-original')) {
+                    localCount++;
+                    nextElement = nextElement.nextElementSibling;
+                }
+
+                // Create new table
+                const newWrapper = createDecomposedTable({ origMode: false });
+
+                // Assigning local number
+                const newLocalNumber = localCount + 1;
+                const newTitleElement = newWrapper.querySelector('h3');
+                if(newTitleElement) {
+                    // Update the title of the newly created table with the local number
+                    newTitleElement.textContent = `Decomposed Table ${newLocalNumber}:`;
+                }
+
+                wrapper.parentNode.insertBefore(newWrapper, wrapper.nextSibling);
+            });
+            footer.appendChild(addTableLocalBtn);
+
+            // Check Decomposition button
+            const checkDecompLocalBtn = document.createElement('button');
+            checkDecompLocalBtn.type = 'button';
+            checkDecompLocalBtn.classList.add('button', 'small', 'check-decomp-local-btn');
+            checkDecompLocalBtn.textContent = 'Check Decomposition';
+
+            checkDecompLocalBtn.addEventListener('click', () => {
+                document.getElementById('checkDecompositionBtn')?.click();
+            });
+            footer.appendChild(checkDecompLocalBtn);
+
+            wrapper.appendChild(footer);
+        }
+
         return wrapper;
     }
 
@@ -850,63 +1604,134 @@ document.addEventListener('DOMContentLoaded', () => {
         addTableBtn.addEventListener('click', () => createDecomposedTable());
     }
 
-    // Undo / restore logic
-    undoBtn.addEventListener('click', async () => {
-        if (!confirm('Undo last decomposition? This will restore the previous decomposition state.')) return;
-        try {
-            const resp = await fetch('/normalization/undo', { method: 'POST' });
-            if (!resp.ok) {
-                const txt = await resp.text();
-                throw new Error(txt || resp.statusText);
-            }
-            const history = await resp.json(); // array of JSON strings (snapshots)
-            if (!Array.isArray(history) || history.length === 0) {
-                // nothing to restore: clear UI
-                decContainer.innerHTML = '';
-                alert('No earlier decomposition snapshot available to restore.');
-                return;
-            }
-            // last snapshot (current after pop) is at history
-            const lastJson = history[history.length - 1];
-            let snapshot;
-            try {
-                snapshot = JSON.parse(lastJson);
-            } catch (e) {
-                console.error('Could not parse snapshot JSON from server', e);
-                alert('Failed to parse history snapshot from server.');
-                return;
-            }
-            // Restore UI from snapshot
-            restoreFromSnapshot(snapshot);
-
-        } catch (err) {
-            console.error('Undo failed', err);
-            alert('Undo failed: ' + (err.message || err));
+    // DP/LJ render + Continue button
+    function renderDpLjStatus(resp) {
+        let box = document.getElementById('dpLjStatusBox');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'dpLjStatusBox';
+            box.style.display = 'block';
+            box.style.margin = '12px 0';
+            box.style.padding = '10px';
+            box.style.border = '1px solid #ccc';
+            document.getElementById('decomposedTablesContainer')?.after(box);
         }
-    });
 
-    function restoreFromSnapshot(snapshot) {
-        // clear existing wrappers
-        decContainer.innerHTML = '';
-        if (!Array.isArray(snapshot) || snapshot.length === 0) {
-            // nothing to restore (empty)
+        const msgs = document.getElementById('dpLjMessages') || (() => {
+            const d = document.createElement('div'); d.id='dpLjMessages'; box.prepend(d); return d;
+        })();
+
+        console.log('renderDpLjStatus: dp,lj=', resp.dpPreserved, resp.ljPreserved);
+        const continueBtn = document.getElementById('continueNormalizationBtn');
+
+        msgs.innerHTML = '';
+
+        const dp = Boolean(resp.dpPreserved);
+
+        const ul = document.createElement('ul');
+        ul.style.margin = '0';
+        ul.style.paddingLeft = '1.1em';
+
+        const liDp = document.createElement('li');
+        liDp.textContent = dp ? 'The decomposition is dependency-preserving.' : 'The decomposition is not dependency-preserving.';
+        ul.appendChild(liDp);
+        liDp.style.color = dp ? 'green' : '#b65a00';
+        ul.appendChild(liDp);
+
+        msgs.appendChild(ul);
+
+        box.style.display = 'block';
+
+        const undo = document.getElementById('undoDecompBtn');
+        if (continueBtn && undo && continueBtn.parentNode) {
+            continueBtn.parentNode.insertBefore(undo, continueBtn);
+        }
+
+        const wrappers = document.querySelectorAll('.decomposed-wrapper');
+    }
+
+    async function handleContinueNormalization() {
+        const result = await Swal.fire({
+            title: 'Confirm Proceed',
+            text: 'Proceed to the next stage with this decomposition?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#3b82f6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, Proceed'
+        });
+
+        if (!result.isConfirmed) return;
+
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        if (wrappers.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Cannot Proceed',
+                text: 'No decomposed tables to continue with.',
+                confirmButtonText: 'Close'
+            });
             return;
         }
-        // Each element of snapshot is expected to be an array of numbers (columns)
-        snapshot.forEach(cols => {
-            try {
-                // create new wrapper and set columns
-                const w = createDecomposedTable();
-                // ensure cols is array of numbers, if JSON parsed numbers as numbers or strings, normalize
-                const normalized = Array.isArray(cols) ? cols.map(c => Number(c)) : [];
-                if (w && typeof w.updateFromColumns === 'function') {
-                    w.updateFromColumns(normalized);
-                    // fetch projected FDs for UI
-                    fetchProjectedFDs(w, normalized);
-                }
-            } catch (e) {
-                console.error('Failed to restore a wrapper from snapshot entry', e);
+
+        const tablesData = wrappers.map(w => {
+            const cols = JSON.parse(w.dataset.columns || '[]');
+            // Read data directly from the table's tbody
+            const manualRows = Array.from(w.querySelectorAll('tbody tr')).map(tr => {
+                return Array.from(tr.cells).map(td => td.textContent).join(',');
+            });
+            let manualDataString = manualRows.join(';');
+
+            // If tbody is empty, use the stored restore data
+            if (manualDataString.length === 0 && w.dataset.restoredManualData) {
+                manualDataString = w.dataset.restoredManualData;
             }
+            return {
+                columns: cols,
+                manualData: manualDataString,
+                fds: (readProjectedFdsFromWrapper(w) || []).join(';')
+            };
         });
+
+        // Get plaque and column mapping data
+        const lastResult = window._lastDecomposeResult || {};
+        const globalRic = lastResult.globalRic || [];
+        const unionCols = lastResult.unionCols || [];
+
+        // Payload to be sent to the backend
+        const payload = {
+            columnsPerTable: tablesData.map(t => t.columns),
+            manualPerTable: tablesData.map(t => t.manualData),
+            fdsPerTable: tablesData.map(t => t.fds),
+            globalRic: globalRic,
+            unionCols: unionCols
+        };
+
+        try {
+            const res = await fetch('/normalize/continue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.redirected) {
+                window.location.href = res.url; // Follow the redirect
+            } else if (!res.ok) {
+                throw new Error(await res.text());
+            } else {
+                window.location.reload();
+            }
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error Continuing',
+                text: 'Failed to continue to the next step: ' + err.message,
+                confirmButtonText: 'Close'
+            });
+        }
     }
+
+    const continueBtn = document.getElementById('continueNormalizationBtn');
+    if (continueBtn) continueBtn.addEventListener('click', handleContinueNormalization);
+
 });
