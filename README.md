@@ -12,6 +12,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 - ** Maven 3.6+ (preferably 3.8+)**  
 - ** (Optional) An IDE such as IntelliJ IDEA, Eclipse, or VS Code with Java support**
 - ** Other maven dependencies will be installed automatically as long as an internet connection is available.**
+- ** PostgreSQL & pgAdmin (preferably) **
 
 ## Project Setup
 
@@ -61,6 +62,28 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    ```bash
    @Value("${ric.jar.path=libs/relational_information_content-1.0-SNAPSHOT-jar-with-dependencies.jar}")
+
+5. **Setting up the database in the project**
+
+   PostgreSQL must be downloaded and installed on the appropriate operating system of the computer used.
+
+   Using PostgreSQL command-line tool (psql) or an administrative tool (pgAdmin), create the following database and user:
+
+   Create new database:
+
+   ```bash
+   CREATE DATABASE plaque_db;
+
+   Create database user and password (In the application.properties file, username: postgres and password: user123)
+   Important Note: If the database will be used with a different username and password, these must be specified in the project's application.properties file.
+
+   ```bash
+   CREATE USER postgres WITH PASSWORD 'user123';
+
+   Give the new user full permissions on the database
+
+   ```bash
+   GRANT ALL PRIVILEGES ON DATABASE plaque_db TO plaque_user;
 
 ## Running Project
 
