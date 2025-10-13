@@ -8,10 +8,11 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 ## Requirements
 
-- ** Java 17+** 
-- ** Maven 3.6+ (preferably 3.8+)**  
-- ** (Optional) An IDE such as IntelliJ IDEA, Eclipse, or VS Code with Java support**
-- ** Other maven dependencies will be installed automatically as long as an internet connection is available.**
+- **Java 17+** 
+- **Maven 3.6+ (preferably 3.8+)**  
+- **(Optional) An IDE such as IntelliJ IDEA, Eclipse, or VS Code with Java support**
+- **Other maven dependencies will be installed automatically as long as an internet connection is available.**
+- **PostgreSQL & pgAdmin (preferably)**
 
 ## Project Setup
 
@@ -19,9 +20,14 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    After downloading the project to the device, the location path of the project must be used with the cd command.
 
+   Note: 
+
+   If the project name is set up as "plaque-calculator-app" on the device, a command like "cd plaque-calculator-app" should be used to navigate to the project location.
+   
    ```bash
    git clone https://git.fim.uni-passau.de/sdbs/theses/students/mt-atakan-celik-code.git
    cd mt-atakan-celik-code
+   ```
 
 2. **Check that the external RIC JAR is available** 
 
@@ -34,6 +40,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    ```bash
    relational_information_content-1.0-SNAPSHOT-jar-with-dependencies.jar
+   ```
 
 3. **(Optional) If no JAR files are found in the libs folder**
 
@@ -46,6 +53,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
    ```bash
    cd path/to/relational_information_content
    mvn -DskipTests package
+   ```
 
 4. **Check that application.properties file has correct path**
 
@@ -57,15 +65,43 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    ```bash
    @Value("${ric.jar.path=libs/relational_information_content-1.0-SNAPSHOT-jar-with-dependencies.jar}")
+   ```
+
+5. **Setting up the database in the project**
+
+   PostgreSQL must be downloaded and installed on the appropriate operating system of the computer used.
+
+   Using PostgreSQL command-line tool (psql) or an administrative tool (pgAdmin), create the following database and user:
+
+   Create new database:
+
+   ```sql
+   CREATE DATABASE plaque_db;
+   ```
+
+   Create database user and password (In the application.properties file, username: plaque_user and password: user123)
+   
+   Important Note: If the database will be used with a different username and password, these must be specified in the project's application.properties file.
+
+   ```sql
+   CREATE USER plaque_user WITH PASSWORD 'user123';
+   ```
+
+   Give the new user full permissions on the database
+
+   ```sql
+   GRANT ALL PRIVILEGES ON DATABASE plaque_db TO plaque_user;
+   ```
 
 ## Running Project
 
-1. **Build *
+1. **Build**
 
    The following command is used to build the WAR.
 
    ```bash
    mvn clean package
+   ```
 
 2. **Run with Maven**
 
@@ -73,6 +109,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    ```bash
    mvn spring-boot:run
+   ```
 
 3. **Using the App**
 
