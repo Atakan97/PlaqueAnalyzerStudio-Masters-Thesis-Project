@@ -8,11 +8,11 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 ## Requirements
 
-- ** Java 17+** 
-- ** Maven 3.6+ (preferably 3.8+)**  
-- ** (Optional) An IDE such as IntelliJ IDEA, Eclipse, or VS Code with Java support**
-- ** Other maven dependencies will be installed automatically as long as an internet connection is available.**
-- ** PostgreSQL & pgAdmin (preferably) **
+- **Java 17+** 
+- **Maven 3.6+ (preferably 3.8+)**  
+- **(Optional) An IDE such as IntelliJ IDEA, Eclipse, or VS Code with Java support**
+- **Other maven dependencies will be installed automatically as long as an internet connection is available.**
+- **PostgreSQL & pgAdmin (preferably)**
 
 ## Project Setup
 
@@ -87,7 +87,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 ## Running Project
 
-1. **Build *
+1. **Build **
 
    The following command is used to build the WAR.
 
