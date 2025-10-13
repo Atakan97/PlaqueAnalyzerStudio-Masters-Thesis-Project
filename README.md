@@ -71,18 +71,18 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    Create new database:
 
-   ```bash
+   ```sql
    CREATE DATABASE plaque_db;
 
-   Create database user and password (In the application.properties file, username: postgres and password: user123)
+   Create database user and password (In the application.properties file, username: plaque_user and password: user123)
    Important Note: If the database will be used with a different username and password, these must be specified in the project's application.properties file.
 
-   ```bash
-   CREATE USER postgres WITH PASSWORD 'user123';
+   ```sql
+   CREATE USER plaque_user WITH PASSWORD 'user123';
 
    Give the new user full permissions on the database
 
-   ```bash
+   ```sql
    GRANT ALL PRIVILEGES ON DATABASE plaque_db TO plaque_user;
 
 ## Running Project
