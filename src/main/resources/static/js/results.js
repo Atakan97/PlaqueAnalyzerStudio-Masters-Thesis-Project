@@ -58,9 +58,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!isNaN(val) && val >= 0 && val < 1) {
                         td.style.backgroundColor = getPlaqueColor(val);
                         td.classList.add('plaque-cell');
+
+                        if (val < 0.5) {
+                            td.style.color = '#ffffff';
+                        } else {
+                            td.style.color = '';
+                        }
                     } else {
                         // Reset background color for RIC >= 1
                         td.classList.remove('plaque-cell');
+                        td.style.backgroundColor = '';
+                        td.style.color = '';
                     }
                 });
             });

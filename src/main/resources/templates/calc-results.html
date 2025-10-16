@@ -31,78 +31,79 @@
 
   <div class="tables-side-by-side">
     <div th:if="${inputData != null}" class="table-wrapper">
-    <h3>Input Data:</h3>
-    <table class="data-grid">
-      <thead>
-      <tr>
-        <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
-            th:text="${i}"></th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="row : ${inputData.split(';')}">
-        <td th:each="cell : ${row.split(',')}"
-            th:text="${cell}">val</td>
-      </tr>
-      </tbody>
-    </table>
-  </div>
+      <h3>Input Data:</h3>
+      <table class="data-grid">
+        <thead>
+        <tr>
+          <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
+              th:text="${i}"></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${inputData.split(';')}">
+          <td th:each="cell : ${row.split(',')}"
+              th:text="${cell}">val</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
 
     <div th:if="${ricMatrix != null}" class="table-wrapper" style="margin-bottom: 30px;">
-    <h3>Calculation Results:</h3>
+      <h3>Calculation Results:</h3>
 
-    <table id="initialCalcTable" class="data-grid">
-      <thead>
-      <tr>
-        <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
-            th:text="${i}"></th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="row, rsStat : ${inputData.split(';')}">
-        <td th:each="cell, csStat : ${row.split(',')}"
-            th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
-            th:text="${cell}">val</td>
-      </tr>
-      </tbody>
-    </table>
+      <table id="initialCalcTable" class="data-grid">
+        <thead>
+        <tr>
+          <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
+              th:text="${i}"></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row, rsStat : ${inputData.split(';')}">
+          <td th:each="cell, csStat : ${row.split(',')}"
+              th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
+              th:text="${cell}">val</td>
+        </tr>
+        </tbody>
+      </table>
 
-    <table id="ricTable" class="data-grid" style="display:none">
-      <thead>
-      <tr>
-        <th th:each="i : ${#numbers.sequence(1, ricColCount)}"
-            th:text="${i}"></th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="row : ${ricMatrix}">
-        <td th:each="cell : ${row}"
-            th:classappend="${cell != '1' and cell != '1.0'} ? 'plaque-cell' : ''"
-            th:text="${cell}"></td>
-      </tr>
-      </tbody>
-    </table>
+      <table id="ricTable" class="data-grid" style="display:none">
+        <thead>
+        <tr>
+          <th th:each="i : ${#numbers.sequence(1, ricColCount)}"
+              th:text="${i}"></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${ricMatrix}">
+          <td th:each="cell : ${row}"
+              th:classappend="${cell != '1' and cell != '1.0'} ? 'plaque-cell' : ''"
+              th:text="${cell}"></td>
+        </tr>
+        </tbody>
+      </table>
 
-    <button id="showCalcBtn" type="button" class="small">
-      Show Information Contents
-    </button>
-    <button id="returnBtn" type="button" class="small" style="display:none">
-      Return to Input
-    </button>
+      <button id="showCalcBtn" type="button" class="small">
+        Show Information Contents
+      </button>
+      <button id="returnBtn" type="button" class="small" style="display:none">
+        Return to Input
+      </button>
+    </div>
   </div>
 </div>
 
-  <form th:action="@{/normalization}" method="get" class="start-normalize-form">
-    <button type="submit" class="small">Start Normalization</button>
+<form th:action="@{/normalization}" method="get" class="start-normalize-form">
+    <button type="submit" class="button pill">Start Normalization</button>
   </form>
 
-<script th:inline="javascript">
-  /*<![CDATA[*/
-  window.ricMatrix = /*[[${ricMatrix}]]*/ [];
-  // Moving transitive closure FDs to JavaScript
-  window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
-  /*]]>*/
-</script>
-<script th:src="@{/js/results.js}"></script> <a th:href="@{/logout}" class="student-logout-button">Logout</a>
+  <script th:inline="javascript">
+    /*<![CDATA[*/
+    window.ricMatrix = /*[[${ricMatrix}]]*/ [];
+    // Moving transitive closure FDs to JavaScript
+    window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
+    /*]]>*/
+  </script>
+  <script th:src="@{/js/results.js}"></script> <a th:href="@{/logout}" class="student-logout-button">Logout</a>
 </body>
 </html>

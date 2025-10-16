@@ -8,7 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
-
+import org.springframework.ui.Model;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -22,6 +22,7 @@ public class NormalizationController {
 	// The key to keeping the past in Session
 	private static final String HISTORY_SESSION_KEY = "normalizationHistory";
 	private static final String START_TIME_SESSION_KEY = "normalizationSessionStart";
+	private static final String BCNF_SUMMARY_SESSION_KEY = "bcnfSummary";
 
 	@Autowired
 	public NormalizationController(LogService logService) {
@@ -29,7 +30,7 @@ public class NormalizationController {
 	}
 
 	@PostMapping("/continue")
-	public String continueNormalization(@RequestBody Map<String,Object> body, HttpSession session) {
+	public String continueNormalization(@RequestBody Map<String, Object> body, HttpSession session) {
 		long startTime = System.currentTimeMillis();
 
 		// Get the history list from Session, create a new list if it doesn't exist
@@ -50,10 +51,8 @@ public class NormalizationController {
 		return "redirect:/normalization";
 	}
 
-	// Helper method in the NormalizationController class that will add the duration to the model
 	public Long setAndGetNormalizationStartTime(HttpSession session) {
 		Long startTime = (Long) session.getAttribute(START_TIME_SESSION_KEY);
-		// If the duration has not been set before (for example, this is the first stage), set it
 		if (startTime == null) {
 			startTime = System.currentTimeMillis();
 			session.setAttribute(START_TIME_SESSION_KEY, startTime);
@@ -64,8 +63,8 @@ public class NormalizationController {
 	// Adding new API method
 	@PostMapping("/log-success")
 	public ResponseEntity<?> logBcnfSuccess(@RequestParam("userName") String userName,
-											@RequestParam("attempts") int attempts,
-											@RequestParam("elapsedTime") long elapsedTime) {
+											 @RequestParam("attempts") int attempts,
+											 @RequestParam("elapsedTime") long elapsedTime) {
 		try {
 			logService.logBcnfSuccess(userName, attempts, elapsedTime);
 			return ResponseEntity.ok().build();
@@ -75,12 +74,56 @@ public class NormalizationController {
 		}
 	}
 
+	@PostMapping("/bcnf-review")
+	public ResponseEntity<?> storeBcnfReview(@RequestBody Map<String, Object> body, HttpSession session) {
+		if (body == null || body.isEmpty()) {
+			return ResponseEntity.badRequest().body("BCNF data payload is empty.");
+		}
+		session.setAttribute(BCNF_SUMMARY_SESSION_KEY, body);
+		Map<String, Object> response = new HashMap<>();
+		response.put("redirectUrl", "/normalize/bcnf-summary");
+		return ResponseEntity.ok(response);
+	}
+
+	@GetMapping("/bcnf-summary")
+	public String showBcnfSummary(HttpSession session, Model model) {
+		@SuppressWarnings("unchecked")
+		Map<String, Object> summary = (Map<String, Object>) session.getAttribute(BCNF_SUMMARY_SESSION_KEY);
+		if (summary == null) {
+			return "redirect:/normalization";
+		}
+
+		model.addAttribute("bcnfSummaryJson", gson.toJson(summary));
+
+		Number attemptsNumber = extractNumber(summary.get("attempts"));
+		Number elapsedNumber = extractNumber(summary.get("elapsedTime"));
+
+		model.addAttribute("bcnfAttempts", attemptsNumber != null ? attemptsNumber.intValue() : 0);
+		model.addAttribute("bcnfElapsedSeconds", elapsedNumber != null ? elapsedNumber.longValue() : 0L);
+
+		return "bcnf-summary";
+	}
+
+	private Number extractNumber(Object value) {
+		if (value instanceof Number number) {
+			return number;
+		}
+		if (value instanceof String str) {
+			try {
+				if (str.contains(".")) {
+					return Double.parseDouble(str);
+				}
+				return Long.parseLong(str);
+			} catch (NumberFormatException ignored) {
+			}
+		}
+		return null;
+	}
+
 	@GetMapping("/previous")
 	public String returnToPrevious(HttpSession session) {
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
-
-		// If there is a step in the past, delete the last step
 		if (history != null && !history.isEmpty()) {
 			history.remove(history.size() - 1);
 			session.setAttribute(HISTORY_SESSION_KEY, history);

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Normalization BCNF Tables</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <script th:src="@{/js/bcnf-summary.js}" defer></script>
+</head>
+<body>
+<div class="bcnf-summary-container">
+  <header class="bcnf-summary-header">
+    <h2>Normalization Process Summary</h2>
+    <div class="bcnf-header-actions">
+      <a th:href="@{/normalization}" class="button pill">Back to Normalization</a>
+      <a th:href="@{/calc}" class="button pill">Back to Main Page</a>
+    </div>
+  </header>
+
+  <section>
+    <h3>Decomposed Tables (BCNF)</h3>
+    <div id="bcnfTablesContainer" class="bcnf-tables-container"></div>
+  </section>
+
+  <section class="bcnf-log-section">
+    <h3>Save to Logs</h3>
+    <form id="bcnfLogForm">
+      <div class="form-row">
+        <label for="bcnfUserName">Your Name</label>
+        <input type="text" id="bcnfUserName" name="userName" required placeholder="Enter your name" />
+      </div>
+      <button type="submit" class="button">Save Results</button>
+    </form>
+  </section>
+</div>
+
+<script th:inline="javascript">
+/*<![CDATA[*/
+  window.bcnfSummaryData = /*[[${bcnfSummaryJson}]]*/ null;
+  window.bcnfAttempts = /*[[${bcnfAttempts}]]*/ 0;
+  window.bcnfElapsedSeconds = /*[[${bcnfElapsedSeconds}]]*/ 0;
+/*]]>*/
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</body>
+</html>

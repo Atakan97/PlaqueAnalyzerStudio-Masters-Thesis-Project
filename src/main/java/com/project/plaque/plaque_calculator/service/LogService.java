@@ -20,7 +20,7 @@ public class LogService {
 	public void logBcnfSuccess(String userName, int attempts, long elapsedTimeSecs) {
 		LogEntry logEntry = new LogEntry();
 		logEntry.setUserName(userName);
-		logEntry.setAttempts(attempts);
+		logEntry.setAttempts(attempts > 0 ? attempts : 1);
 		logEntry.setElapsedTimeSecs(elapsedTimeSecs);
 		logEntry.setTimestamp(LocalDateTime.now());
 		logEntry.setActivityType("BCNF_SUCCESS"); // Define activity type

@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     //Compute plaque and continue to normalization buttons
     const computeAllBtn = document.getElementById('computeAllBtn');
     const continueNormalizationBtn = document.getElementById('continueNormalizationBtn');
+    const showBcnfTablesBtn = document.getElementById('showBcnfTablesBtn');
 
     const changeDecompositionBtn = document.getElementById('changeDecompositionBtn');
 
@@ -316,6 +317,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try { wrapper.dataset.projectedFdsOrig = JSON.stringify(serverProjected); } catch (e) {}
             try { wrapper.dataset.projectedFds = JSON.stringify(localFds); } catch (e) {}
 
+            // Persist per-table RIC matrix for later review/summary usage
+            try { wrapper.dataset.ricMatrix = JSON.stringify(ricMatrixSingle || []); } catch (e) {}
+
             // Update FD list in UI, show serverProjected to the user
             try {
                 const fdContainer = wrapper.querySelector('.fd-list-container');
@@ -436,6 +440,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (decContainer) decContainer.innerHTML = '';
             let restoreTableCounter = 0; // New R# counter
 
+            // Visible decContainer
+            if (decContainer) {
+                decContainer.style.display = 'flex';
+                decContainer.style.flexDirection = 'row';
+                decContainer.style.flexWrap = 'wrap';
+                decContainer.style.gap = '0';
+                decContainer.style.alignItems = 'flex-start';
+            }
+
             for (let i = 0; i < crCols.length; i++) {
                 restoreTableCounter++;
                 let colsEntry = crCols[i];
@@ -452,6 +465,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const manualStr = (typeof crManual[i] === 'string') ? crManual[i] : (crManual[i] == null ? '' : String(crManual[i]));
                 const fdsStr = (typeof crFds[i] === 'string') ? crFds[i] : (crFds[i] == null ? '' : String(crFds[i]));
+
+
+                // YENİ: Relation'ı ve çocuklarını saracak dikey konteyner
+                const relationGroup = document.createElement('div');
+                relationGroup.classList.add('relation-group');
+                relationGroup.style.display = 'flex';
+                relationGroup.style.flexDirection = 'column'; // R# altındaki her şey alt alta aksın
+
+                // KRİTİK DÜZELTME: R# Grubunun Genişliğini 650px yap. (300px T1 + 20px boşluk + 300px T2 = 620px)
+                relationGroup.style.flex = '0 0 950px';
+                relationGroup.style.width = '950px'; // Yedek kısıtlama
+                relationGroup.style.alignSelf = 'flex-start';
+
+                // Gruplar arasına boşluk eklemek için bu değeri kullan
+                relationGroup.style.marginRight = '30px';
+
 
                 // Create wrapper in origMode so it behaves as "original replacement"
                 let w;
@@ -473,10 +502,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Add a CSS class to make the newly created wrapper look like the "original table"
                     w.classList.add('orig-as-decomposed-row-item');
 
+                    // Remove margins from wrapper inside R# table
+                    w.style.marginRight = '0';
+                    w.style.marginBottom = '0';
+
                 } catch (e) {
                     console.error('createDecomposedTable failed during restore', e);
                     continue;
                 }
+
+                // Create local decomposed tables container
+                const localDecompositionContainer = document.createElement('div');
+                localDecompositionContainer.classList.add('local-decomposition-group');
+
+                // KRİTİK: T# tablolarının yan yana akmasını sağla
+                localDecompositionContainer.style.display = 'flex';
+                localDecompositionContainer.style.flexWrap = 'wrap';
+                localDecompositionContainer.style.paddingTop = '10px';
+                localDecompositionContainer.style.borderTop = '1px dashed #ddd';
+                localDecompositionContainer.style.gap = '20px';
+
+                // Adding to dom
+                // R# add table and local container into relationGroup
+                relationGroup.appendChild(w);
+                relationGroup.appendChild(localDecompositionContainer);
+
+                // Add RelationGroup to main decContainer
+                decContainer.appendChild(relationGroup);
 
                 // Ensure dataset.projectedFds set and FD list visible
                 try {
@@ -486,14 +538,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     try { w.dataset.projectedFds = '[]'; } catch (e2) {}
                 }
             }
-            // Visible decContainer
-            if (decContainer) {
-                decContainer.style.display = 'flex';
-                decContainer.style.flexDirection = 'row';
-                decContainer.style.flexWrap = 'wrap';
-            }
-            }
-        }  catch (e) {
+        }
+    }  catch (e) {
         console.warn('Restore (decomposed-as-original) failed', e);
     }
 
@@ -942,11 +988,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
         if (wrappers.length === 0) {
             Swal.fire({
-            icon: 'warning',
-            title: 'No Tables',
-            text: 'There are no decomposed tables yet.',
-            confirmButtonText: 'Close'
-        }); return; }
+                icon: 'warning',
+                title: 'No Tables',
+                text: 'There are no decomposed tables yet.',
+                confirmButtonText: 'Close'
+            }); return; }
 
         // Build tablesPayload for global decompose-all
         const tablesPayload = [];
@@ -1045,56 +1091,31 @@ document.addEventListener('DOMContentLoaded', () => {
             // ------------------------------------------------------------------------------------
 
             if (isBcnf) {
-                // If BCNF: Show the modal that will get the username
-                // Calculate the total elapsed time
                 const CURRENT_TIME_MS = Date.now();
-                // Calculate the total elapsed time in seconds
                 const finalElapsedSecs = Math.max(0, Math.floor((CURRENT_TIME_MS - SESSION_START_TIME_MS) / 1000));
-
-                // Collect data
                 const finalAttempts = parseInt(attemptEl?.textContent || '0', 10);
                 const finalElapsed = finalElapsedSecs;
-                const { value: userName } = await Swal.fire({
+
+                await Swal.fire({
                     title: 'Normalization Complete! (BCNF)',
                     text: 'Congratulations! The decomposition process is finished. Please enter your name to save the results.',
                     icon: 'success',
-                    input: 'text',
-                    inputLabel: 'Your Name:',
-                    inputValidator: (value) => {
-                        if (!value) {
-                            return 'You must enter your name!';
-                        }
-                    },
-                    confirmButtonText: 'Save and Finish'
+                    confirmButtonText: 'Continue'
                 });
 
-                if (userName) {
-                    // Make the logging API call
-                    await fetch(`/normalize/log-success?userName=${encodeURIComponent(userName.trim())}&attempts=${finalAttempts}&elapsedTime=${finalElapsed}`, {
-                        method: 'POST'
-                    }).then(res => {
-                        if (res.ok) {
-                            // Notify if logging was successful
-                            Swal.fire('Success!', `Results are saved`, 'success');
-                        } else {
-                            Swal.fire('Logging Failed', 'Could not save the results to the log.', 'error');
-                        }
-                    }).catch(err => {
-                        Swal.fire('Network Error', 'Failed to connect to logging service.', 'error');
-                    });
-                } else {
-                    // Refused/canceled entering username
-                    Swal.fire('Log Skipped', 'Results were not saved.', 'info');
-                }
-
-
-                // End the stream
                 if (computeAllBtn) computeAllBtn.style.display = 'none';
                 if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
                 if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'inline-block';
 
+                window._lastBcnfMeta = {
+                    attempts: finalAttempts,
+                    elapsed: finalElapsed
+                };
+                if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'inline-block';
                 return;
             }
+            if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'none';
+            window._lastBcnfMeta = null;
 
             // If not BCNF, continue to flow (hide Compute Plaque button, show Continue to Normalization)
             if (computeAllBtn) {
@@ -1167,8 +1188,6 @@ document.addEventListener('DOMContentLoaded', () => {
         wrapper.appendChild(title);
 
         wrapper.style.minWidth = '300px';
-        wrapper.style.marginRight = '20px';
-        wrapper.style.marginBottom = '20px';
 
         // Content container (table + FD list side-by-side)
         const content = document.createElement('div');
@@ -1249,26 +1268,22 @@ document.addEventListener('DOMContentLoaded', () => {
             renderDecomposed();
         };
 
-        // Render function
         function renderDecomposed() {
             headRow.innerHTML = '';
             decomposedCols.forEach(idx => {
                 const th = document.createElement('th');
                 const colNum = (idx + 1);
 
-                // Add column delete button only in normal mode (origMode: false)
                 if (!origMode) {
                     th.innerHTML = `
                     <span>${colNum}</span>
                     <button type="button" class="delete-col-btn" title="Remove column ${colNum}" data-orig-idx="${idx}">×</button>
                 `;
                 } else {
-                    th.innerHTML = `<span>${colNum}</span>`; // In restore mode, only show the column number
+                    th.innerHTML = `<span>${colNum}</span>`;
                 }
-
                 th.dataset.origIdx = idx;
                 th.setAttribute('data-orig-idx', String(idx));
-
                 headRow.appendChild(th);
             });
 
@@ -1277,15 +1292,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 try { wrapper.dataset.columns = JSON.stringify([]); } catch (e) { wrapper.dataset.columns = '[]'; }
                 return;
             }
+
+            let sourceRows = [];
+            // If there is a .relation-group on the page, this means it is the second stage
+            const isInRestoreMode = document.querySelectorAll('.relation-group').length > 0;
+
+            if (isInRestoreMode) {
+                // In subsequent normalization steps, the data source is the nearest R# table
+                const relationGroup = wrapper.closest('.relation-group');
+                if (relationGroup) {
+                    const sourceTable = relationGroup.querySelector('.decomposed-wrapper.orig-as-original table');
+                    if (sourceTable) {
+                        // Read the data in the body of the R# table row by row
+                        Array.from(sourceTable.querySelectorAll('tbody tr')).forEach(tr => {
+                            const rowData = {}; // Keep each row as an object
+                            Array.from(tr.cells).forEach(td => {
+                                const origIdx = td.dataset.origIdx;
+                                if (origIdx !== undefined) {
+                                    rowData[origIdx] = td.textContent;
+                                }
+                            });
+                            sourceRows.push(rowData);
+                        });
+                    }
+                }
+            } else {
+                // In the first normalization step, the data source is the global originalRows array
+                originalRows.forEach(rowArr => {
+                    const rowData = {};
+                    rowArr.forEach((cell, idx) => {
+                        rowData[idx] = cell;
+                    });
+                    sourceRows.push(rowData);
+                });
+            }
             const seen = new Set();
-            originalRows.forEach(row => {
+            sourceRows.forEach(row => {
                 const tuple = decomposedCols.map(i => (row[i] !== undefined ? String(row[i]) : '')).join('|');
                 if (seen.has(tuple)) return;
                 seen.add(tuple);
                 const tr = tbody.insertRow();
                 decomposedCols.forEach(idx => {
                     const td = tr.insertCell();
-                    td.textContent = row[idx];
+                    td.textContent = row[idx] || '';
                     td.style.backgroundColor = 'white';
                     td.dataset.origIdx = idx;
                     td.classList.remove('plaque-cell');
@@ -1301,11 +1350,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 group: {
                     name: 'columns',
                     pull: (origMode ? 'clone' : true),
-                    // Allows the source to be only the original table header
-                    put: function (to, from, draggedElement) {
-                        // Check globally defined original table header (origHeadRow)
-                        return from.el === origHeadRow;
-                    }
+                    put: !origMode
                 },
                 animation: 150,
                 draggable: 'th',
@@ -1315,7 +1360,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 chosenClass: 'sortable-chosen',
 
                 onMove: (evt) => {
-                    return evt.from === origHeadRow || evt.from === headRow;
+                    // If the target of the drag operation is an R# table (i.e. the hovered table has the .orig-as-original class), block this move
+                    if (evt.to.closest('.orig-as-original')) {
+                        return false;
+                    }
+                    // Allow carry in all other cases (R# -> T#, T# -> T#, Original -> T#)
+                    return true;
                 },
                 onAdd: (evt) => {
                     const item = evt.item;
@@ -1360,16 +1410,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 onRemove: (evt) => {
                     const item = evt.item;
+                    if (origMode) {
+                        // Just remove the cloned element from the DOM
+                        if (item && item.parentNode === headRow) item.remove();
+                        return; // Do not change the state
+                    }
                     let idx = NaN;
                     try {
-                        if (item && item.dataset && item.dataset.origIdx !== undefined && item.dataset.origIdx !== '') {
+                        if (item && item.dataset && item.dataset.origIdx !== undefined) {
                             idx = parseInt(item.dataset.origIdx, 10);
-                        } else if (item && item.getAttribute && item.getAttribute('data-orig-idx')) {
+                        } else if (item && item.getAttribute('data-orig-idx')) {
                             idx = parseInt(item.getAttribute('data-orig-idx'), 10);
-                        } else {
-                            const txt = item && item.textContent ? item.textContent.trim() : '';
-                            const parsed = parseInt(txt, 10);
-                            if (!isNaN(parsed)) idx = parsed - 1;
                         }
                     } catch (e) { idx = NaN; }
 
@@ -1382,6 +1433,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
 
                 onEnd: (evt) => {
+                    // If this table is a source for cloning (origMode), do not change its state (columns) at the end of the drag
+                    // This prevents the column body from disappearing
+                    if (origMode) {
+                        return;
+                    }
+
                     decomposedCols = Array.from(headRow.children).map(th => parseInt(th.dataset.origIdx, 10));
 
                     const dropX = evt.originalEvent && evt.originalEvent.clientX != null ? evt.originalEvent.clientX : 0;
@@ -1441,25 +1498,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // If we are in restore mode (origMode: true) or if there is manual data
             if (origMode || (initialManualData && initialManualData.trim())) {
                 // Render titles, only if origMode is set to 0, manually draw the titles (since renderDecomposed is skipped)
-                    headRow.innerHTML = '';
-                    decomposedCols.forEach(idx => {
-                        const th = document.createElement('th');
-                        const colNum = (idx + 1);
+                headRow.innerHTML = '';
+                decomposedCols.forEach(idx => {
+                    const th = document.createElement('th');
+                    const colNum = (idx + 1);
 
-                        // Delete button in header, only add if originMode is not
-                        if (!origMode) {
-                            th.innerHTML = `
+                    // Delete button in header, only add if originMode is not
+                    if (!origMode) {
+                        th.innerHTML = `
                         <span>${colNum}</span>
                         <button type="button" class="delete-col-btn" title="Remove column ${colNum}" data-orig-idx="${idx}">×</button>
                     `;
-                        } else {
-                            th.innerHTML = `<span>${colNum}</span>`; // In restore mode, only show the column number
-                        }
+                    } else {
+                        th.innerHTML = `<span>${colNum}</span>`; // In restore mode, only show the column number
+                    }
 
-                        th.dataset.origIdx = idx;
-                        th.setAttribute('data-orig-idx', String(idx));
-                        headRow.appendChild(th);
-                    });
+                    th.dataset.origIdx = idx;
+                    th.setAttribute('data-orig-idx', String(idx));
+                    headRow.appendChild(th);
+                });
 
 
                 // Restore body, redraw body from initialManualData
@@ -1556,29 +1613,36 @@ document.addEventListener('DOMContentLoaded', () => {
             addTableLocalBtn.style.marginRight = '5px';
             // Click logic, create the new table and insert it immediately after the existing table
             addTableLocalBtn.addEventListener('click', () => {
-                // Count the decomposed (origMode: false) children immediately below this parent
-                let localCount = 0;
-                // Start from Parent's next sibling
-                let nextElement = wrapper.nextElementSibling;
 
-                // Count as long as nextElement exists and this element is not a 'decomposed-wrapper' and 'orig-as-original'
-                while(nextElement && nextElement.classList.contains('decomposed-wrapper') && !nextElement.classList.contains('orig-as-original')) {
-                    localCount++;
-                    nextElement = nextElement.nextElementSibling;
+                // Find parent (relationGroup) of R# table (wrapper)
+                const relationGroup = wrapper.parentNode;
+                if (!relationGroup || !relationGroup.classList.contains('relation-group')) {
+                    console.error('Relation grubu bulunamadı. Yapısal hata.');
+                    return;
                 }
+
+                // Local Container is .local-decomposition-group in relationGroup
+                const localContainer = relationGroup.querySelector('.local-decomposition-group');
+                if (!localContainer) {
+                    console.error('Yerel ayrıştırma grubu bulunamadı.');
+                    return;
+                }
+
+                // Count only tables in this container
+                const existingChildren = localContainer.querySelectorAll('.decomposed-wrapper');
+                const newLocalNumber = existingChildren.length + 1;
 
                 // Create new table
                 const newWrapper = createDecomposedTable({ origMode: false });
 
                 // Assigning local number
-                const newLocalNumber = localCount + 1;
                 const newTitleElement = newWrapper.querySelector('h3');
                 if(newTitleElement) {
-                    // Update the title of the newly created table with the local number
                     newTitleElement.textContent = `Decomposed Table ${newLocalNumber}:`;
                 }
 
-                wrapper.parentNode.insertBefore(newWrapper, wrapper.nextSibling);
+                // Add the new table to the end of the local group container (All T# tables will flow side by side)
+                localContainer.appendChild(newWrapper);
             });
             footer.appendChild(addTableLocalBtn);
 
@@ -1650,6 +1714,73 @@ document.addEventListener('DOMContentLoaded', () => {
         const wrappers = document.querySelectorAll('.decomposed-wrapper');
     }
 
+    function collectDecompositionState() {
+        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        if (wrappers.length === 0) {
+            return null;
+        }
+
+        const tablesData = wrappers.map(w => {
+            const cols = JSON.parse(w.dataset.columns || '[]');
+            const manualRows = Array.from(w.querySelectorAll('tbody tr')).map(tr => Array.from(tr.cells).map(td => td.textContent).join(','));
+            let manualDataString = manualRows.join(';');
+
+            if (manualDataString.length === 0 && w.dataset.restoredManualData) {
+                manualDataString = w.dataset.restoredManualData;
+            }
+
+            let localFds = [];
+            try { localFds = readProjectedFdsFromWrapper(w) || []; } catch (e) { localFds = []; }
+
+            let originalFds = localFds.slice();
+            if (w.dataset.projectedFdsOrig) {
+                try {
+                    const parsed = JSON.parse(w.dataset.projectedFdsOrig);
+                    if (Array.isArray(parsed)) {
+                        originalFds = parsed.map(String).map(s => s.replace(/→/g, '->').trim()).filter(Boolean);
+                    }
+                } catch (err) {
+                    // keep fallback
+                }
+            }
+
+            let ricMatrix = [];
+            if (w.dataset.ricMatrix) {
+                try {
+                    const parsedRic = JSON.parse(w.dataset.ricMatrix);
+                    if (Array.isArray(parsedRic)) {
+                        ricMatrix = parsedRic;
+                    }
+                } catch (err) {
+                    ricMatrix = [];
+                }
+            }
+
+            return {
+                columns: cols,
+                manualData: manualDataString,
+                localFds,
+                originalFds,
+                ricMatrix
+            };
+        });
+
+        const lastResult = window._lastDecomposeResult || {};
+
+        return {
+            tablesData,
+            payload: {
+                columnsPerTable: tablesData.map(t => t.columns),
+                manualPerTable: tablesData.map(t => t.manualData),
+                fdsPerTable: tablesData.map(t => t.localFds.join(';')),
+                fdsPerTableOriginal: tablesData.map(t => t.originalFds.join(';')),
+                ricPerTable: tablesData.map(t => t.ricMatrix),
+                globalRic: lastResult.globalRic || [],
+                unionCols: lastResult.unionCols || []
+            }
+        };
+    }
+
     async function handleContinueNormalization() {
         const result = await Swal.fire({
             title: 'Confirm Proceed',
@@ -1663,8 +1794,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!result.isConfirmed) return;
 
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-        if (wrappers.length === 0) {
+        const state = collectDecompositionState();
+        if (!state) {
             Swal.fire({
                 icon: 'warning',
                 title: 'Cannot Proceed',
@@ -1673,39 +1804,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             return;
         }
-
-        const tablesData = wrappers.map(w => {
-            const cols = JSON.parse(w.dataset.columns || '[]');
-            // Read data directly from the table's tbody
-            const manualRows = Array.from(w.querySelectorAll('tbody tr')).map(tr => {
-                return Array.from(tr.cells).map(td => td.textContent).join(',');
-            });
-            let manualDataString = manualRows.join(';');
-
-            // If tbody is empty, use the stored restore data
-            if (manualDataString.length === 0 && w.dataset.restoredManualData) {
-                manualDataString = w.dataset.restoredManualData;
-            }
-            return {
-                columns: cols,
-                manualData: manualDataString,
-                fds: (readProjectedFdsFromWrapper(w) || []).join(';')
-            };
-        });
-
-        // Get plaque and column mapping data
-        const lastResult = window._lastDecomposeResult || {};
-        const globalRic = lastResult.globalRic || [];
-        const unionCols = lastResult.unionCols || [];
-
-        // Payload to be sent to the backend
-        const payload = {
-            columnsPerTable: tablesData.map(t => t.columns),
-            manualPerTable: tablesData.map(t => t.manualData),
-            fdsPerTable: tablesData.map(t => t.fds),
-            globalRic: globalRic,
-            unionCols: unionCols
-        };
+        const payload = state.payload;
 
         try {
             const res = await fetch('/normalize/continue', {
@@ -1731,7 +1830,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleShowBcnfTables() {
+        const state = collectDecompositionState();
+        if (!state) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Decomposed Tables',
+                text: 'There are no decomposed tables to display.',
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
+
+        const bcnfMeta = window._lastBcnfMeta || { attempts: 0, elapsed: 0 };
+        const payload = {
+            ...state.payload,
+            attempts: bcnfMeta.attempts || 0,
+            elapsedTime: bcnfMeta.elapsed || 0
+        };
+
+        try {
+            const res = await fetch('/normalize/bcnf-review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.redirected) {
+                window.location.href = res.url;
+                return;
+            }
+
+            if (res.ok) {
+                const json = await res.json().catch(() => null);
+                if (json && json.redirectUrl) {
+                    window.location.href = json.redirectUrl;
+                    return;
+                }
+                window.location.href = '/normalize/bcnf-summary';
+                return;
+            }
+
+            throw new Error(await res.text());
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Navigation Failed',
+                text: 'Unable to open BCNF tables page: ' + err.message,
+                confirmButtonText: 'Close'
+            });
+        }
+    }
+
     const continueBtn = document.getElementById('continueNormalizationBtn');
     if (continueBtn) continueBtn.addEventListener('click', handleContinueNormalization);
+
+    if (showBcnfTablesBtn) {
+        showBcnfTablesBtn.addEventListener('click', handleShowBcnfTables);
+    }
 
 });

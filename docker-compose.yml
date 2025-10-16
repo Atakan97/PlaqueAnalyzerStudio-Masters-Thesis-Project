@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:14.1
+    container_name: plaque_postgres_db
+    environment:
+      POSTGRES_DB: plaque_log_db
+      POSTGRES_USER: plaque_user
+      POSTGRES_PASSWORD: user123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # Connect your computer's port 5433 to the container's port 5432
+
+  # Spring Boot Applcation Service
+  app:
+    container_name: plaque_calculator_app
+    build: . # Search for Dockerfile in this directory and create the image
+    depends_on:
+      - db # Wait for the database to be ready before starting the application
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/plaque_log_db # Service name 'db' replaced 'localhost'
+      - SPRING_DATASOURCE_USERNAME=plaque_user
+      - SPRING_DATASOURCE_PASSWORD=user123
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - ric.jar.path=/app/libs/relational_information_content-1.0-SNAPSHOT-jar-with-dependencies.jar
+volumes:
+  postgres_data: # Ensures database data is persistent
