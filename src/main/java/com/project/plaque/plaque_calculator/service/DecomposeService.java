@@ -111,17 +111,57 @@ public class DecomposeService {
 	// DecomposeService.decomposeAll
 	public DecomposeAllResponse decomposeAll(DecomposeAllRequest req, HttpSession session) {
 		System.out.println("DecomposeService.decomposeAll: start");
-		System.out.println("decomposeAll req fds = " + req.getFds());
 
 		// Original FDs & attrs
 		List<FD> originalFDs = getOriginalFDsOrThrow(session);
 		List<String> originalAttrOrder = getOriginalAttrOrder(session);
 
-		@SuppressWarnings("unchecked")
-		Set<String> originalAttrs = (Set<String>) session.getAttribute("originalAttrs");
-		if (originalAttrs == null) {
-			originalAttrs = new LinkedHashSet<>(originalAttrOrder);
-			session.setAttribute("originalAttrs", originalAttrs);
+		// When present, baseColumns signals that validating a nested relation
+		List<Integer> baseColumns = req.getBaseColumns();
+		if (baseColumns == null) baseColumns = Collections.emptyList();
+		List<String> scopedAttrOrder;
+		List<FD> scopedOriginalFds;
+		Set<String> scopedOriginalAttrs;
+
+		if (!baseColumns.isEmpty()) {
+			// Map incoming column indices to the original attribute names for the scoped relation
+			List<Integer> normalized = baseColumns.stream()
+				.filter(Objects::nonNull)
+				.map(Number::intValue)
+				.filter(idx -> idx >= 0 && idx < originalAttrOrder.size())
+				.distinct()
+				.sorted()
+				.collect(Collectors.toList());
+
+			if (normalized.isEmpty()) {
+				throw new IllegalArgumentException("baseColumns contained no valid indices");
+			}
+
+			scopedAttrOrder = normalized.stream()
+				.map(originalAttrOrder::get)
+				.collect(Collectors.toCollection(ArrayList::new));
+
+			scopedOriginalAttrs = new LinkedHashSet<>(scopedAttrOrder);
+
+			// Include transitive FDs so that projected subsets retain necessary implications
+			List<FD> allFds = new ArrayList<>(originalFDs);
+			Set<FD> transitive = new LinkedHashSet<>(fdService.findTransitiveFDs(originalFDs));
+			allFds.addAll(transitive);
+
+			scopedOriginalFds = allFds.stream()
+				.filter(fd -> scopedOriginalAttrs.containsAll(fd.getLhs()) && scopedOriginalAttrs.containsAll(fd.getRhs()))
+				.map(fd -> new FD(new LinkedHashSet<>(fd.getLhs()), new LinkedHashSet<>(fd.getRhs())))
+				.collect(Collectors.toCollection(ArrayList::new));
+		} else {
+			scopedAttrOrder = new ArrayList<>(originalAttrOrder);
+			scopedOriginalFds = new ArrayList<>(originalFDs);
+			@SuppressWarnings("unchecked")
+			Set<String> originalAttrs = (Set<String>) session.getAttribute("originalAttrs");
+			if (originalAttrs == null) {
+				originalAttrs = new LinkedHashSet<>(originalAttrOrder);
+				session.setAttribute("originalAttrs", originalAttrs);
+			}
+			scopedOriginalAttrs = new LinkedHashSet<>(scopedAttrOrder);
 		}
 
 		// Take tables request
@@ -176,6 +216,9 @@ public class DecomposeService {
 		// unionAttrs = union of all table attributes (should equal originalAttrs if validated above)
 		LinkedHashSet<String> unionAttrs = new LinkedHashSet<>();
 		for (Set<String> s : tableAttrSets) unionAttrs.addAll(s);
+		if (!scopedOriginalAttrs.equals(unionAttrs)) {
+			System.out.println("DecomposeService.decomposeAll: unionAttrs=" + unionAttrs + ", scopedOriginalAttrs=" + scopedOriginalAttrs);
+		}
 
 		// Build global manual rows, prefer top-level manualData if provided
 		List<String> manualRowsList = new ArrayList<>();
@@ -236,13 +279,13 @@ public class DecomposeService {
 			Set<String> attrs = tableAttrSets.get(i);
 
 			// Project & minimize projected FDs for this table
-			List<FD> projected = projectFDsByClosure(attrs, originalFDs);
-			List<FD> minimizedProjected = minimizeLhsForFds(projected, originalFDs);
+			List<FD> projected = projectFDsByClosure(attrs, scopedOriginalFds);
+			List<FD> minimizedProjected = minimizeLhsForFds(projected, scopedOriginalFds);
 
 			combinedProjectedFds.addAll(minimizedProjected);
 
 			// BCNF checking
-			if (!checkBCNF(attrs, originalFDs, fdService)) {
+			if (!checkBCNF(attrs, scopedOriginalFds, fdService)) {
 				allTablesBCNF = false;
 			}
 
@@ -262,7 +305,8 @@ public class DecomposeService {
 			uniq.putIfAbsent(key, fd);
 		}
 		List<FD> combinedProjectedUnique = new ArrayList<>(uniq.values());
-		boolean dpPreservedGlobal = checkDependencyPreserving(originalFDs, combinedProjectedUnique);
+		// Evaluate dependency preservation / lossless join against the scoped population of FDs and attributes
+		boolean dpPreservedGlobal = checkDependencyPreserving(scopedOriginalFds, combinedProjectedUnique);
 
 		// Build schemaList deterministically
 		List<Set<String>> schemaList = tableAttrSets.stream()
@@ -270,7 +314,7 @@ public class DecomposeService {
 				.collect(Collectors.toList());
 		schemaList.sort(Comparator.comparing(s -> String.join(",", s)));
 
-		boolean ljPreservedGlobal = checkLosslessDecomposition(new LinkedHashSet<>(originalAttrOrder), schemaList, originalFDs);
+		boolean ljPreservedGlobal = checkLosslessDecomposition(new LinkedHashSet<>(scopedAttrOrder), schemaList, scopedOriginalFds);
 
 		System.out.println("DecomposeService.decomposeAll: dpPreservedGlobal=" + dpPreservedGlobal + " ljPreservedGlobal=" + ljPreservedGlobal);
 

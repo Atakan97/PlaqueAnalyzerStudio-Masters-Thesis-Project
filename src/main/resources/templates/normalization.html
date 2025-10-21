@@ -14,6 +14,7 @@
     window.currentRelationsManual = /*[[${currentRelationsManualJson}]]*/ [];
     window.currentRelationsColumns = /*[[${currentRelationsColumnsJson}]]*/ [];
     window.currentRelationsFds = /*[[${currentRelationsFdsJson}]]*/ [];
+    window.currentRelationsFdsOriginal = /*[[${currentRelationsFdsOriginalJson}]]*/ [];
     window.currentUnionCols = /*[[${currentUnionColsJson}]]*/ [];
     window.currentGlobalManualRows = /*[[${currentGlobalManualRowsJson}]]*/ [];
     window.currentGlobalRic = /*[[${currentGlobalRicJson}]]*/ [];
@@ -29,8 +30,8 @@
 <div class="normalization-container">
 
   <div class="norm-header">
-    <h2>Normalization Assistant</h2>
-    <a th:if="${canReturn}" th:href="@{/normalize/previous}" class="button return-previous-btn">
+    <h2 class="section-heading-sm">Normalization Assistant</h2>
+    <a th:if="${canReturn}" th:href="@{/normalize/previous}" class="button pill return-previous-btn">
       Return to Previous Step
     </a>
   </div>
@@ -54,7 +55,7 @@
           </li>
         </ul>
       </div>
-      <h3>Original Table:</h3>
+      <h3 class="section-subheading">Original Table</h3>
 
       <div id="originalTableContainer"></div>
     </div>
@@ -63,7 +64,7 @@
   <div class="global-actions">
     <button id="addTable" class="button pill">+ Add Decomposed Table</button>
 
-    <button type="button" id="checkDecompositionBtn" class="button pill">Check Decomposition</button>
+    <button type="button" id="decompositionFinishedBtn" class="button pill">Decomposition Finished</button>
     <button type="button" id="changeDecompositionBtn" class="button pill" style="display:none">Change Decomposition</button>
 
   </div>
@@ -76,7 +77,7 @@
   </div>
 
   <div id="normalizationStepActions" style="text-align:right">
-    <button id="computeAllBtn" type="button" style="display:none" class="compute-btn pill">Compute Plaque</button>
+    <button id="computeAllBtn" type="button" data-auto-compute="true" style="display:none" class="compute-btn pill">Compute Plaque</button>
     <button id="continueNormalizationBtn" type="button" style="display:none" class="button pill">Continue to Normalization</button>
     <button id="showBcnfTablesBtn" type="button" style="display:none" class="button pill">Show the BCNF Tables</button>
   </div>

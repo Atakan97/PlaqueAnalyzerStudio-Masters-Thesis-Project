@@ -10,20 +10,24 @@
 <body>
 <div class="bcnf-summary-container">
   <header class="bcnf-summary-header">
-    <h2>Normalization Process Summary</h2>
+    <div class="bcnf-header-text">
+      <span class="bcnf-badge"><span class="bcnf-badge-icon" aria-hidden="true">🏆</span>BCNF Complete</span>
+      <h2 class="bcnf-title">Normalization Process Summary</h2>
+      <p class="bcnf-subtitle">Review the BCNF decomposition tables and their functional dependencies, and save the session details.</p>
+    </div>
     <div class="bcnf-header-actions">
       <a th:href="@{/normalization}" class="button pill">Back to Normalization</a>
       <a th:href="@{/calc}" class="button pill">Back to Main Page</a>
     </div>
   </header>
 
-  <section>
-    <h3>Decomposed Tables (BCNF)</h3>
+  <section class="bcnf-section">
+    <h3 class="bcnf-section-title">Decomposed Tables (BCNF)</h3>
     <div id="bcnfTablesContainer" class="bcnf-tables-container"></div>
   </section>
 
   <section class="bcnf-log-section">
-    <h3>Save to Logs</h3>
+    <h3 class="bcnf-section-title">Save to Logs</h3>
     <form id="bcnfLogForm">
       <div class="form-row">
         <label for="bcnfUserName">Your Name</label>

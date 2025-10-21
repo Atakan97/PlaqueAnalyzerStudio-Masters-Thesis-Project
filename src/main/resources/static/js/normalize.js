@@ -10,16 +10,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Get session start time (if not available, use current time)
     const SESSION_START_TIME_MS = window.normalizationStartTimeMs || Date.now();
 
-    //Compute plaque and continue to normalization buttons
+    // Compute plaque and continue to normalization buttons
     const computeAllBtn = document.getElementById('computeAllBtn');
+    const autoComputeEnabled = computeAllBtn && computeAllBtn.dataset.autoCompute === 'true';
+
+    window.isNormalizationAutoComputeEnabled = () => autoComputeEnabled;
     const continueNormalizationBtn = document.getElementById('continueNormalizationBtn');
     const showBcnfTablesBtn = document.getElementById('showBcnfTablesBtn');
+    const decompositionFinishedBtn = document.getElementById('decompositionFinishedBtn');
 
     const changeDecompositionBtn = document.getElementById('changeDecompositionBtn');
 
-    // Lossless & Dependency options (not used in restore but kept)
-    const losslessCheckbox   = document.getElementById('losslessJoin');
-    const dependencyCheckbox = document.getElementById('dependencyPreserve');
     const timeLimitInput     = document.getElementById('timeLimit');
 
     // Functional dependencies transitive closure calculation logic
@@ -166,13 +167,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Compute RIC for a single wrapper
-    async function computeRicForWrapper(wrapper) {
+    async function computeRicForWrapper(wrapper, baseColumnsOverride = null) {
         if (!wrapper) return;
 
         // Parse columns array for this wrapper (original zero-based indices)
         let cols = [];
         try { cols = JSON.parse(wrapper.dataset.columns || '[]'); } catch (e) { cols = []; }
         cols = Array.isArray(cols) ? cols.map(Number) : [];
+
+        let baseColumns = Array.isArray(baseColumnsOverride) ? baseColumnsOverride.map(Number) : null;
+        if ((!baseColumns || baseColumns.length === 0) && wrapper.dataset.baseColumns) {
+            try {
+                const parsed = JSON.parse(wrapper.dataset.baseColumns);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    baseColumns = parsed.map(Number);
+                }
+            } catch (err) {
+                baseColumns = null;
+            }
+        }
 
         // Check stored manual data (for restored tables)
         const storedManualDataStr = wrapper.dataset.restoredManualData || '';
@@ -265,6 +278,9 @@ document.addEventListener('DOMContentLoaded', () => {
             monteCarlo: false,
             samples: 0
         };
+        if (Array.isArray(baseColumns) && baseColumns.length > 0) {
+            payload.baseColumns = baseColumns;
+        }
 
         console.log('computeRicForWrapper: sending /normalize/decompose payload=', payload);
 
@@ -405,10 +421,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const crColsRaw = window.currentRelationsColumns || null;
         const crManualRaw = window.currentRelationsManual || null;
         const crFdsRaw = window.currentRelationsFds || null;
+        const crFdsOriginalRaw = window.currentRelationsFdsOriginal || null;
 
         const crCols = normalizeWindowArray(crColsRaw);
         const crManual = normalizeWindowArray(crManualRaw);
         const crFds = normalizeWindowArray(crFdsRaw);
+        const crFdsOriginal = normalizeWindowArray(crFdsOriginalRaw);
 
         restoreMode = Array.isArray(crCols) && crCols.length > 0;
         console.log('restoreMode?', restoreMode, { crColsRaw, crManualRaw, crFdsRaw, crCols, crManual, crFds });
@@ -423,15 +441,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const fdListContainer = document.getElementById('fdListContainer');
             if (fdListContainer) fdListContainer.style.display = 'none'; // Hide FD list
 
-            // Hide Compute Plaque and Continue buttons (these should be visible after check decomposition)
+            // Hide Compute Plaque and Continue buttons (these should be visible after Decomposition Finished)
             if (computeAllBtn) computeAllBtn.style.display = 'none';
             if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
 
-            // Show Check Decomposition button
-            const checkDecompositionBtn = document.getElementById('checkDecompositionBtn');
-            if (checkDecompositionBtn) checkDecompositionBtn.style.display = 'none';
+            // Show Decomposition Finished button
+            if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
 
-            // Hide Change Decomposition button (should be visible after check decomposition)
+            // Hide Change Decomposition button (should be visible after Decomposition Finished)
             if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
 
             const globalActionsDiv = document.querySelector('.global-actions');
@@ -465,24 +482,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 colsEntry = Array.isArray(colsEntry) ? colsEntry.map(n => Number(n)) : [];
 
                 const manualStr = (typeof crManual[i] === 'string') ? crManual[i] : (crManual[i] == null ? '' : String(crManual[i]));
-                const fdsStr = (typeof crFds[i] === 'string') ? crFds[i] : (crFds[i] == null ? '' : String(crFds[i]));
+                const fdsStrLocal = (typeof crFds[i] === 'string') ? crFds[i] : (crFds[i] == null ? '' : String(crFds[i]));
+                const fdsStrOriginal = (typeof crFdsOriginal[i] === 'string') ? crFdsOriginal[i] : (crFdsOriginal[i] == null ? '' : String(crFdsOriginal[i]));
+
+                const fdLocalList = (fdsStrLocal && fdsStrLocal.length > 0)
+                    ? fdsStrLocal.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean)
+                    : [];
+                const fdOriginalList = (fdsStrOriginal && fdsStrOriginal.length > 0)
+                    ? fdsStrOriginal.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean)
+                    : [];
+                const displayFdList = fdOriginalList.length > 0 ? fdOriginalList : fdLocalList;
+                const displayFdsStr = displayFdList.join(';');
 
 
-                // YENİ: Relation'ı ve çocuklarını saracak dikey konteyner
+                // Vertical container to enclose Relation and its decomposed tables
                 const relationGroup = document.createElement('div');
                 relationGroup.classList.add('relation-group');
                 relationGroup.style.display = 'flex';
-                relationGroup.style.flexDirection = 'column'; // R# altındaki her şey alt alta aksın
-
-                // KRİTİK DÜZELTME: R# Grubunun Genişliğini 650px yap. (300px T1 + 20px boşluk + 300px T2 = 620px)
+                relationGroup.style.flexDirection = 'column';
                 relationGroup.style.flex = '0 0 950px';
-                relationGroup.style.width = '950px'; // Yedek kısıtlama
+                relationGroup.style.width = '950px';
                 relationGroup.style.alignSelf = 'flex-start';
-
-                // Gruplar arasına boşluk eklemek için bu değeri kullan
                 relationGroup.style.marginRight = '30px';
 
-                console.log('Restoring table', i, {colsEntry, manualStr, fdsStr});
+                console.log('Restoring table', i, { colsEntry, manualStr, fdLocalList, fdOriginalList });
                 // Create wrapper in origMode so it behaves as "original replacement"
                 let w;
                 try {
@@ -491,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         origMode: true,
                         initialColumns: colsEntry,
                         initialManualData: manualStr,
-                        initialFds: fdsStr,
+                        initialFds: displayFdsStr,
                     });
                     console.log('Restored wrapper', i, w);
                     // Finalize the header assignment: Relation R1, R2, ...
@@ -534,9 +557,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Ensure dataset.projectedFds set and FD list visible
                 try {
                     const fdListToStore = (fdsStr && fdsStr.length > 0) ? (fdsStr.split(/[;\\r\\n]+/).map(s => s.trim()).filter(Boolean)) : [];
+                    const fdOriginalList = (fdsStrOriginal && fdsStrOriginal.length > 0)
+                        ? fdsStrOriginal.split(/[;\\r\\n]+/).map(s => s.trim()).filter(Boolean)
+                        : fdListToStore;
                     w.dataset.projectedFds = JSON.stringify(fdListToStore);
+                    w.dataset.projectedFdsOrig = JSON.stringify(fdOriginalList);
                 } catch (e) {
                     try { w.dataset.projectedFds = '[]'; } catch (e2) {}
+                    try { w.dataset.projectedFdsOrig = '[]'; } catch (e3) {}
                 }
             }
         }
@@ -660,7 +688,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getCoveredColumns() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        let wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        const relationGroup = document.querySelector('.relation-group');
+        if (relationGroup) {
+            const relationTables = Array.from(relationGroup.querySelectorAll('.decomposed-wrapper'));
+            if (relationTables.length > 0) wrappers = relationTables;
+        }
         const covered = new Set();
         wrappers.forEach(w => {
             try {
@@ -671,51 +704,142 @@ document.addEventListener('DOMContentLoaded', () => {
         return covered;
     }
 
-    // Section for check decomposition button
+    function parseColumnsFromWrapper(wrapper) {
+        try {
+            const cols = JSON.parse(wrapper.dataset.columns || '[]');
+            return Array.isArray(cols) ? cols.map(Number) : [];
+        } catch (err) {
+            return [];
+        }
+    }
+
+    function readManualDataString(wrapper) {
+        const rows = Array.from(wrapper.querySelectorAll('tbody tr')).map(tr =>
+            Array.from(tr.cells).map(td => (td.textContent ?? '').trim()).join(',')
+        ).filter(Boolean);
+
+        if (rows.length === 0 && wrapper.dataset.restoredManualData) {
+            return wrapper.dataset.restoredManualData;
+        }
+        return rows.join(';');
+    }
+
+    function readProjectedFdsString(wrapper) {
+        try {
+            const fds = readProjectedFdsFromWrapper(wrapper) || [];
+            return fds.map(String)
+                .map(s => s.replace('\u2192', '->').replace('→', '->'))
+                .map(s => s.replaceAll(/\s*,\s*/g, ','))
+                .map(s => s.replaceAll(/\s*->\s*/g, '->'))
+                .map(s => s.replace(/-+>/g, '->').trim())
+                .filter(Boolean)
+                .join(';');
+        } catch (err) {
+            return '';
+        }
+    }
+
+    // Section for Decomposition Finished button
     // Select the required HTML element
-    const checkDecompositionBtn = document.getElementById('checkDecompositionBtn');
     // Function to check if columns are covered
-    function checkColumnCoverage() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+    function checkColumnCoverage(options = {}) {
+        const wrappers = (options.wrappers && options.wrappers.length)
+            ? options.wrappers
+            : Array.from(document.querySelectorAll('.decomposed-wrapper'));
+
         if (wrappers.length === 0) {
             return { valid: false, message: 'Error: No decomposed tables exist yet.' };
         }
-        const covered = getCoveredColumns();
-        const missing = [];
-        for (let i = 0; i < colCount; i++) {
-            if (!covered.has(i)) {
-                missing.push(i + 1);
-            }
-        }
+
+        const baseColumns = (options.baseColumns && options.baseColumns.length)
+            ? options.baseColumns.map(Number)
+            : Array.from({ length: colCount }, (_, idx) => idx);
+
+        const covered = new Set();
+        wrappers.forEach(w => {
+            parseColumnsFromWrapper(w).forEach(idx => covered.add(idx));
+        });
+
+        const missing = baseColumns.filter(idx => !covered.has(idx));
         if (missing.length > 0) {
+            const labels = missing.map(idx => idx + 1);
             return {
                 valid: false,
-                message: `Error: The following columns from the original table are missing: ${missing.join(', ')}.`
+                message: `Error: The following columns are missing: ${labels.join(', ')}.`
             };
         }
-        return { valid: true, message: '✓ All original columns are covered by the decomposition.' };
+
+        const successMessage = options.successMessage
+            ? options.successMessage
+            : '✓ All original columns are covered by the decomposition.';
+        return { valid: true, message: successMessage };
     }
 
     // Function that runs decomposition checks (Lossless-Join and Dependency-Preserving)
-    async function runDecompositionChecks() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-        const tablesPayload = wrappers.map(w => ({
-            columns: JSON.parse(w.dataset.columns || '[]')
-        }));
-        const bodyObj = { tables: tablesPayload, fds: (window.fdListWithClosure || window.fdList || '') };
+    async function runDecompositionChecks(options = {}) {
+        const {
+            wrappersOverride,
+            baseColumns,
+            fdsOverride,
+            manualDataOverride,
+            storeResult = true
+        } = options;
+
+        const wrappers = (wrappersOverride && wrappersOverride.length)
+            ? wrappersOverride
+            : Array.from(document.querySelectorAll('.decomposed-wrapper'));
+
+        const tablesPayload = wrappers.map(w => {
+            const entry = { columns: parseColumnsFromWrapper(w) };
+            const manual = readManualDataString(w);
+            if (manual) entry.manualData = manual;
+            const tableFds = readProjectedFdsString(w);
+            if (tableFds) entry.fds = tableFds;
+            return entry;
+        });
+
+        const bodyObj = {
+            tables: tablesPayload,
+            fds: fdsOverride != null ? fdsOverride : (window.fdListWithClosure || window.fdList || '')
+        };
+
+        if (manualDataOverride !== undefined) {
+            if (manualDataOverride && manualDataOverride.trim().length > 0) {
+                bodyObj.manualData = manualDataOverride;
+            }
+        } else {
+            const combinedManual = tablesPayload
+                .map(t => t.manualData)
+                .filter(Boolean)
+                .join(';');
+            if (combinedManual.length > 0) {
+                bodyObj.manualData = combinedManual;
+            }
+        }
+
+        if (Array.isArray(baseColumns) && baseColumns.length > 0) {
+            bodyObj.baseColumns = baseColumns.map(Number);
+        }
+
         try {
             const resp = await fetch('/normalize/decompose-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(bodyObj)
             });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(text || resp.statusText);
+            }
             const json = await resp.json();
-            window._lastDecomposeResult = json; // Keep for possible future use
+            if (storeResult) {
+                window._lastDecomposeResult = json; // Keep for possible future use
+            }
             const ljValid = json.ljPreserved === true;
             const dpValid = json.dpPreserved === true;
             const ljMessage = ljValid
-                ? '✓ The decomposition fulfill the lossless join property.'
-                : 'Error: The decomposition does not fulfill the lossless join property.';
+                ? '✓ The decomposition fulfill the lossless-join property.'
+                : 'Error: The decomposition does not fulfill the lossless-join property.';
 
             const dpMessage = dpValid
                 ? 'The decomposition is dependency-preserving.'
@@ -730,11 +854,106 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             return {
                 ljValid: false,
-                ljMessage: 'Server Error: Could not check for lossless join.',
+                ljMessage: 'Server Error: Could not check for lossless-join.',
                 dpValid: false,
-                dpMessage: 'Server Error: Could not check for dependency preserving.',
-                rawResponse: null
+                dpMessage: 'Server Error: Could not check for dependency-preserving.',
+                rawResponse: null,
+                error: err
             };
+        }
+    }
+
+    async function handleRelationDecompositionCheck(relationGroup, baseWrapper, triggerBtn) {
+        const localContainer = relationGroup.querySelector('.local-decomposition-group');
+        const localWrappers = localContainer ? Array.from(localContainer.querySelectorAll('.decomposed-wrapper')) : [];
+
+        if (localWrappers.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Cannot Check Relation',
+                text: 'Please add decomposed tables for this relation before running the check.',
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
+
+        const baseColumns = parseColumnsFromWrapper(baseWrapper);
+        if (baseColumns.length === 0) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Missing Columns',
+                text: 'Could not determine the column set of the base relation.',
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
+
+        const coverageResult = checkColumnCoverage({
+            wrappers: localWrappers,
+            baseColumns,
+            successMessage: '✓ All columns of this relation are covered by the decomposition.'
+        });
+
+        if (!coverageResult.valid) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Coverage Check Failed',
+                text: coverageResult.message.replace('Error:', 'ERROR:'),
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
+
+        triggerBtn.disabled = true;
+        document.body.style.cursor = 'wait';
+
+        try {
+            const fdsOverride = readProjectedFdsString(baseWrapper);
+            const result = await runDecompositionChecks({
+                wrappersOverride: localWrappers,
+                baseColumns,
+                fdsOverride,
+                storeResult: false
+            });
+
+            const finalMessage = [
+                'Decomposition Check Results:',
+                '',
+                `• ${coverageResult.message}`,
+                `• ${result.ljMessage}`,
+                `• ${result.dpMessage}`
+            ].join('\n');
+
+            const success = result.ljValid && result.dpValid;
+            await Swal.fire({
+                icon: success ? 'info' : 'warning',
+                title: success ? 'Decomposition Valid' : 'Decomposition Issues',
+                html: finalMessage.replace(/\n/g, '<br>'),
+                confirmButtonText: success ? 'Continue' : 'Close'
+            });
+
+            if (success) {
+                if (result.rawResponse) {
+                    renderDpLjStatus(result.rawResponse);
+                }
+                localWrappers.forEach(w => {
+                    try { w.dataset.baseColumns = JSON.stringify(baseColumns); } catch (err) {}
+                });
+                lockDecomposedTables(relationGroup);
+                showAllDecomposedFds(localWrappers);
+
+                await computeAllRic(true, localWrappers, baseColumns, relationGroup);
+            }
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Check Failed',
+                text: err && err.message ? err.message : String(err),
+                confirmButtonText: 'Close'
+            });
+        } finally {
+            triggerBtn.disabled = false;
+            document.body.style.cursor = 'default';
         }
     }
 
@@ -751,8 +970,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Function that lock decomposed tables
-    function lockDecomposedTables() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+    function lockDecomposedTables(targetGroup = null) {
+        const scopeRoot = targetGroup || document;
+        const wrappers = Array.from(scopeRoot.querySelectorAll('.decomposed-wrapper'));
         wrappers.forEach(w => {
             // Disable Sortable property in table header (prevents adding/removing/sorting columns)
             const headRow = w.querySelector('table thead tr');
@@ -771,24 +991,35 @@ document.addEventListener('DOMContentLoaded', () => {
             // Add a class to the table indicating that it is locked
             w.classList.add('locked-decomposition');
         });
-        // Hide global "+Add Table" button
-        const addTableBtn = document.getElementById('addTable');
-        if (addTableBtn) {
-            addTableBtn.style.display = 'none';
-        }
-        // Prevent column dragging from original table
-        const origHeadRow = document.getElementById('originalTableContainer')?.querySelector('table thead tr');
-        if (origHeadRow && origHeadRow.sortable) {
-            // Disable cloning/pulling of original table
-            origHeadRow.sortable.option('group', { name: 'columns', pull: false, put: false });
+        if (!targetGroup) {
+            // Hide global "+Add Table" button
+            if (addTableBtn) {
+                addTableBtn.style.display = 'none';
+            }
+            // Prevent column dragging from original table
+            const origHeadRow = document.getElementById('originalTableContainer')?.querySelector('table thead tr');
+            if (origHeadRow && origHeadRow.sortable) {
+                // Disable cloning/pulling of original table
+                origHeadRow.sortable.option('group', { name: 'columns', pull: false, put: false });
+            }
+            if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
+            if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'inline-block';
+        } else {
+            const localAddBtns = targetGroup.querySelectorAll('.add-decomp-local-btn');
+            localAddBtns.forEach(btn => btn.style.display = 'none');
+            const localCheckBtns = targetGroup.querySelectorAll('.check-decomp-local-btn');
+            localCheckBtns.forEach(btn => btn.style.display = 'none');
+            const localChangeBtns = targetGroup.querySelectorAll('.change-decomp-local-btn');
+            localChangeBtns.forEach(btn => btn.style.display = 'inline-block');
         }
     }
 
     // Unlocks decomposed tables modifications (for "Change Decomposition" button)
-    function unlockDecomposedTables() {
+    function unlockDecomposedTables(targetGroup = null) {
         // Clear the status box
         clearDpLjStatus();
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        const scopeRoot = targetGroup || document;
+        const wrappers = Array.from(scopeRoot.querySelectorAll('.decomposed-wrapper'));
         wrappers.forEach(w => {
             // Re-enable Sortable (for drag-and-drop operations)
             const headRow = w.querySelector('table thead tr');
@@ -811,34 +1042,48 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         // Show "+Add Table" button again
-        if (addTableBtn) {
-            addTableBtn.style.display = 'inline-block';
+        if (!targetGroup) {
+            if (addTableBtn) {
+                addTableBtn.style.display = 'inline-block';
+            }
+        } else {
+            const localAddBtns = targetGroup.querySelectorAll('.add-decomp-local-btn');
+            localAddBtns.forEach(btn => btn.style.display = 'inline-block');
+            const localCheckBtns = targetGroup.querySelectorAll('.check-decomp-local-btn');
+            localCheckBtns.forEach(btn => btn.style.display = 'inline-block');
+            const localChangeBtns = targetGroup.querySelectorAll('.change-decomp-local-btn');
+            localChangeBtns.forEach(btn => btn.style.display = 'none');
         }
         // Re-enable column dragging from original table
-        const origHeadRow = document.getElementById('originalTableContainer')?.querySelector('table thead tr');
-
-        if (origHeadRow && typeof Sortable !== 'undefined' && origHeadRow.sortable) {
-            origHeadRow.sortable.option('group', { name: 'columns', pull: 'clone', put: false });
+        if (!targetGroup) {
+            const origHeadRow = document.getElementById('originalTableContainer')?.querySelector('table thead tr');
+            if (origHeadRow && typeof Sortable !== 'undefined' && origHeadRow.sortable) {
+                origHeadRow.sortable.option('group', { name: 'columns', pull: 'clone', put: false });
+            }
         }
 
-        // Manage buttons, show Check Decomposition, hide others
-        if (checkDecompositionBtn) {
-            checkDecompositionBtn.style.display = 'inline-block';
-        }
-        if (changeDecompositionBtn) {
-            changeDecompositionBtn.style.display = 'none';
-        }
-        if (computeAllBtn) {
-            computeAllBtn.style.display = 'none';
-        }
-        if (continueNormalizationBtn) {
-            continueNormalizationBtn.style.display = 'none';
+        // Manage buttons, show Decomposition Finished, hide others
+        if (!targetGroup) {
+            if (decompositionFinishedBtn) {
+                decompositionFinishedBtn.style.display = 'inline-block';
+            }
+            if (changeDecompositionBtn) {
+                changeDecompositionBtn.style.display = 'none';
+            }
+            if (computeAllBtn) {
+                computeAllBtn.style.display = 'none';
+            }
+            if (continueNormalizationBtn) {
+                continueNormalizationBtn.style.display = 'none';
+            }
         }
     }
 
     // Show FDs of decomposed tables
-    function showAllDecomposedFds() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+    function showAllDecomposedFds(wrappersOverride = null) {
+        const wrappers = (Array.isArray(wrappersOverride) && wrappersOverride.length)
+            ? wrappersOverride
+            : Array.from(document.querySelectorAll('.decomposed-wrapper'));
         if (wrappers.length === 0) {
             return;
         }
@@ -858,13 +1103,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Click event for the "Check Decomposition" button
-    if (checkDecompositionBtn) {
-        checkDecompositionBtn.addEventListener('click', async () => {
+    // Click event for the "Decomposition Finished" button
+    if (decompositionFinishedBtn) {
+        decompositionFinishedBtn.addEventListener('click', async () => {
 
             // Lock UI during operation
             document.body.style.cursor = 'wait';
-            checkDecompositionBtn.disabled = true;
+            decompositionFinishedBtn.disabled = true;
 
             // Safely reset DP/LJ state
             clearDpLjStatus();
@@ -885,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Return the interface to normal
                 document.body.style.cursor = 'default';
-                checkDecompositionBtn.disabled = false;
+                decompositionFinishedBtn.disabled = false;
 
                 Swal.fire({
                     icon: 'error',
@@ -908,11 +1153,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Return the interface to normal
                 document.body.style.cursor = 'default';
-                checkDecompositionBtn.disabled = false;
+                decompositionFinishedBtn.disabled = false;
 
                 Swal.fire({
                     icon: 'error',
-                    title: 'Check Failed: Lossy Join',
+                    title: 'Check Failed: Not Lossless-Join',
                     html: finalMessage.replace(/\n/g, '<br>'),
                     confirmButtonText: 'Close'
                 });
@@ -927,10 +1172,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Return the interface to normal
             document.body.style.cursor = 'default';
-            checkDecompositionBtn.disabled = false;
+            decompositionFinishedBtn.disabled = false;
 
-            // Show results to user
-            Swal.fire({
+            // Show results to user and wait for confirmation before proceeding to RIC computation
+            await Swal.fire({
                 icon: 'info',
                 title: 'Decomposition Valid',
                 html: finalMessage.replace(/\n/g, '<br>'),
@@ -946,19 +1191,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Automatically show functional dependencies in decomposed tables
             showAllDecomposedFds();
 
-            // If successful, manage buttons, "Check Decomposition" hide, "Change Decomposition" show
-            if (checkDecompositionBtn) {
-                checkDecompositionBtn.style.display = 'none';
+            // If successful, manage buttons, "Decomposition Finished" hide, "Change Decomposition" show
+            if (decompositionFinishedBtn) {
+                decompositionFinishedBtn.style.display = 'none';
             }
             if (changeDecompositionBtn) {
                 changeDecompositionBtn.style.display = 'inline-block';
             }
 
-            // If successful, show "Compute Plaque" button
-            const computeRicBtn = document.getElementById('computeAllBtn');
-            if (computeRicBtn) {
-                computeRicBtn.style.display = 'inline-block';
-            }
+            await computeAllRic(true);
         });
     }
 
@@ -982,18 +1223,58 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Compute All button
-    computeAllBtn.addEventListener('click', async () => {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
-        if (wrappers.length === 0) {
+    let ricComputationInProgress = false;
+    let lastScopedComputation = null;
+
+    function buildManualDataForWrapper(wrapper) {
+        if (!wrapper) return { manualData: '', baseColumns: [] };
+
+        let cols = [];
+        try { cols = JSON.parse(wrapper.dataset.columns || '[]'); } catch (e) { cols = []; }
+        cols = Array.isArray(cols) ? cols.map(Number) : [];
+
+        const manualRows = Array.from(wrapper.querySelectorAll('tbody tr')).map(tr =>
+            Array.from(tr.cells).map(td => (td.textContent ?? '').trim()).join(',')
+        ).filter(Boolean);
+
+        if (manualRows.length > 0) {
+            const joined = manualRows.join(';');
+            wrapper.dataset.restoredManualData = joined;
+            if (cols.length > 0) {
+                try { wrapper.dataset.baseColumns = JSON.stringify(cols); } catch (err) {}
+            }
+            return { manualData: joined, baseColumns: cols };
+        }
+
+        if (wrapper.dataset.restoredManualData) {
+            if (cols.length > 0) {
+                try { wrapper.dataset.baseColumns = JSON.stringify(cols); } catch (err) {}
+            }
+            return { manualData: wrapper.dataset.restoredManualData, baseColumns: cols };
+        }
+
+        if (cols.length > 0) {
+            try { wrapper.dataset.baseColumns = JSON.stringify(cols); } catch (err) {}
+        }
+        return { manualData: '', baseColumns: cols };
+    }
+
+    async function runGlobalRicComputation(wrappers, autoTriggered = false, options = {}) {
+        const {
+            scopedBaseColumns = null,
+            relationGroup = null
+        } = options;
+
+        if (!Array.isArray(wrappers) || wrappers.length === 0) {
             Swal.fire({
                 icon: 'warning',
                 title: 'No Tables',
                 text: 'There are no decomposed tables yet.',
                 confirmButtonText: 'Close'
-            }); return; }
+            });
+            return null;
+        }
 
-        // Build tablesPayload for global decompose-all
         const tablesPayload = [];
         const perTableFdsArrays = [];
         for (const w of wrappers) {
@@ -1002,21 +1283,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const projFds = readProjectedFdsFromWrapper(w);
             perTableFdsArrays.push(projFds || []);
             if (!cols || cols.length === 0) {
-                tablesPayload.push({ columns: [], manualData: '', fds: projFds.join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
+                const { manualData: manualDataFallback } = buildManualDataForWrapper(w);
+                tablesPayload.push({ columns: [], manualData: manualDataFallback, fds: (projFds || []).join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
                 continue;
             }
-            const seen = new Set();
-            const manualRows = [];
-            originalRows.forEach(row => {
-                const tupArr = cols.map(i => (row[i] !== undefined ? String(row[i]) : ''));
-                const key = tupArr.join('|');
-                if (!seen.has(key)) { seen.add(key); manualRows.push(tupArr.join(',')); }
-            });
-            const manualData = manualRows.join(';');
-            tablesPayload.push({ columns: cols, manualData: manualData, fds: projFds.join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
+            const { manualData, baseColumns } = buildManualDataForWrapper(w);
+            if (Array.isArray(baseColumns) && baseColumns.length > 0) {
+                try { w.dataset.baseColumns = JSON.stringify(baseColumns); } catch (err) {}
+            }
+            tablesPayload.push({ columns: cols, manualData: manualData, baseColumns: baseColumns, fds: (projFds || []).join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
         }
 
-        // Top-level FDs
         let topLevelFdsArr = [];
         try {
             if (window.fdListWithClosure && String(window.fdListWithClosure).trim()) {
@@ -1027,34 +1304,92 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { topLevelFdsArr = []; }
         if (topLevelFdsArr.length === 0) topLevelFdsArr = uniqConcat(perTableFdsArrays);
         const bodyObj = { tables: tablesPayload, fds: topLevelFdsArr.join(';') };
-        try {
-            // Call global endpoint for dp/lj + unionCols metadata
-            const resp = await fetch('/normalize/decompose-all', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bodyObj)
+        if (Array.isArray(scopedBaseColumns) && scopedBaseColumns.length > 0) {
+            bodyObj.baseColumns = scopedBaseColumns.map(Number);
+        }
+        const resp = await fetch('/normalize/decompose-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyObj)
+        });
+        if (!resp.ok) {
+            const txt = await resp.text();
+            Swal.fire({
+                icon: 'error',
+                title: 'Decomposition Not Accepted',
+                text: 'Decomposition not accepted: ' + (txt || resp.statusText),
+                confirmButtonText: 'Close'
             });
+            return null;
+        }
+        const json = await resp.json();
+        if (relationGroup) {
+            lastScopedComputation = {
+                group: relationGroup,
+                response: json,
+                timestamp: Date.now()
+            };
+        } else {
+            window._lastDecomposeResult = json;
+        }
+        return json;
+    }
 
-            if (!resp.ok) {
-                const txt = await resp.text();
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Decomposition Not Accepted',
-                    text: 'Decomposition not accepted: ' + (txt || resp.statusText),
-                    confirmButtonText: 'Close'
-                });
+    async function computeAllRic(autoTriggered = false, overrideWrappers = null, scopedBaseColumns = null, relationGroup = null) {
+        if (ricComputationInProgress) {
+            return;
+        }
+        const wrappers = (Array.isArray(overrideWrappers) && overrideWrappers.length)
+            ? overrideWrappers
+            : Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        if (wrappers.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Tables',
+                text: 'There are no decomposed tables yet.',
+                confirmButtonText: 'Close'
+            });
+            return;
+        }
+
+        ricComputationInProgress = true;
+        if (computeAllBtn) {
+            computeAllBtn.style.display = 'none';
+        }
+
+        // Build tablesPayload for global decompose-all
+        try {
+            const json = await runGlobalRicComputation(wrappers, autoTriggered, { scopedBaseColumns, relationGroup });
+            if (!json) {
+                ricComputationInProgress = false;
+                if (!autoTriggered && computeAllBtn) {
+                    computeAllBtn.style.display = 'inline-block';
+                }
                 return;
             }
-
-            const json = await resp.json();
-            window._lastDecomposeResult = json;
+            if (!relationGroup) {
+                window._lastDecomposeResult = json;
+            }
             // For each wrapper, compute per-table RIC with single-table endpoint and update UI
             for (let i = 0; i < wrappers.length; i++) {
                 const w = wrappers[i];
                 try {
                     console.log('computeAll: now computing per-table RIC for wrapper idx=', i);
                     // computeRicForWrapper will fetch /normalize/decompose and update that wrapper's tbody/fd-list
-                    await computeRicForWrapper(w);
+                    let baseCols = null;
+                    if (Array.isArray(scopedBaseColumns) && scopedBaseColumns.length) {
+                        baseCols = scopedBaseColumns;
+                    } else if (w.dataset.baseColumns) {
+                        try {
+                            const parsed = JSON.parse(w.dataset.baseColumns);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                baseCols = parsed.map(Number);
+                            }
+                        } catch (err) {
+                            baseCols = null;
+                        }
+                    }
+                    await computeRicForWrapper(w, baseCols);
                     console.log('computeAll: per-table RIC complete for wrapper idx=', i);
                 } catch (e) {
                     console.warn('computeAll: per-table RIC failed for wrapper idx=', i, e);
@@ -1078,7 +1413,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Check the BCNF flag
-            const isBcnf = window._lastDecomposeResult && window._lastDecomposeResult.bcnfdecomposition === true;
+            const scopeResult = relationGroup ? lastScopedComputation?.response : window._lastDecomposeResult;
+            const isBcnf = scopeResult && scopeResult.bcnfdecomposition === true;
 
             // Show the calculation success message (after pressing "Compute Plaque" button) and wait for it to close
             await Swal.fire({
@@ -1111,18 +1447,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     elapsed: finalElapsed
                 };
                 if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'inline-block';
+                ricComputationInProgress = false;
                 return;
             }
             if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'none';
             window._lastBcnfMeta = null;
 
             // If not BCNF, continue to flow (hide Compute Plaque button, show Continue to Normalization)
-            if (computeAllBtn) {
-                computeAllBtn.style.display = 'none';
+            if (!relationGroup) {
+                if (computeAllBtn) {
+                    computeAllBtn.style.display = 'none';
+                }
+                if (continueNormalizationBtn) {
+                    continueNormalizationBtn.style.display = 'inline-block';
+                }
             }
-            if (continueNormalizationBtn) {
-                continueNormalizationBtn.style.display = 'inline-block';
-            }
+            ricComputationInProgress = false;
         } catch (err) {
             console.error('decompose-all failed', err);
             Swal.fire({
@@ -1132,8 +1472,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirmButtonText: 'Close'
             });
             stopTimer();
+            ricComputationInProgress = false;
+            if (!autoTriggered && computeAllBtn && !relationGroup) {
+                computeAllBtn.style.display = 'inline-block';
+            }
         }
-    });
+    }
+
+    if (computeAllBtn && !autoComputeEnabled) {
+        computeAllBtn.addEventListener('click', async () => {
+            await computeAllRic(false);
+        });
+    }
 
     // Add decomposed table handler
     if (!addTableBtn) {
@@ -1191,11 +1541,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Content container (table + FD list side-by-side)
         const content = document.createElement('div');
         content.classList.add('decomposed-content');
+        // FD list placeholder (now between title and table)
+        const fdContainer = document.createElement('div');
+        fdContainer.classList.add('fd-list-container', 'fd-inline-panel', 'fd-inline-panel--compact');
+        const fdTitle = document.createElement('h4');
+        fdTitle.textContent = 'Functional Dependencies';
+        const fdUl = document.createElement('ul');
+        fdUl.id = `fdList-${Math.floor(Math.random() * 100000)}`;
+        fdContainer.appendChild(fdTitle);
+        fdContainer.appendChild(fdUl);
+        wrapper.appendChild(fdContainer);
+
         wrapper.appendChild(content);
 
         const leftCol = document.createElement('div');
-        leftCol.style.flex = '0 0 50%';
-        leftCol.style.minWidth = '180px';
+        leftCol.classList.add('decomposed-table-holder');
         content.appendChild(leftCol);
 
         // Table (visual only, header rows will be built from state)
@@ -1207,17 +1567,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const headRow = thead.insertRow();
         const tbody = table.createTBody();
         leftCol.appendChild(table);
-
-        // FD list placeholder
-        const fdContainer = document.createElement('div');
-        fdContainer.classList.add('fd-list-container');
-        const fdTitle = document.createElement('h4');
-        fdTitle.textContent = 'Functional Dependencies';
-        const fdUl = document.createElement('ul');
-        fdUl.id = `fdList-${Math.floor(Math.random() * 100000)}`;
-        fdContainer.appendChild(fdTitle);
-        fdContainer.appendChild(fdUl);
-        content.appendChild(fdContainer);
 
         // Warning container
         const warnDiv = document.createElement('div');
@@ -1257,6 +1606,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (initialManualData) {
             wrapper.dataset.restoredManualData = initialManualData;
         }
+        if (initialCols) {
+            try { wrapper.dataset.baseColumns = JSON.stringify(initialCols); } catch (err) {}
+        }
 
         // Per-table state
         let decomposedCols = [];
@@ -1264,6 +1616,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // External updater
         wrapper.updateFromColumns = function(newCols) {
             decomposedCols = Array.isArray(newCols) ? newCols.slice() : [];
+            try { wrapper.dataset.baseColumns = JSON.stringify(decomposedCols); } catch (err) {}
             renderDecomposed();
         };
 
@@ -1607,23 +1960,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // +Add Decomposed Table button
             const addTableLocalBtn = document.createElement('button');
-            addTableLocalBtn.classList.add('button', 'small', 'add-decomp-local-btn');
+            addTableLocalBtn.classList.add('button', 'pill', 'add-decomp-local-btn');
             addTableLocalBtn.textContent = '+ Add Decomposed Table';
             addTableLocalBtn.style.marginRight = '5px';
             // Click logic, create the new table and insert it immediately after the existing table
             addTableLocalBtn.addEventListener('click', () => {
 
-                // Find parent (relationGroup) of R# table (wrapper)
-                const relationGroup = wrapper.parentNode;
-                if (!relationGroup || !relationGroup.classList.contains('relation-group')) {
-                    console.error('Relation grubu bulunamadı. Yapısal hata.');
+                const relationGroup = wrapper.closest('.relation-group');
+                if (!relationGroup) {
+                    console.error('Relation group not found. Structural error.');
                     return;
                 }
 
                 // Local Container is .local-decomposition-group in relationGroup
                 const localContainer = relationGroup.querySelector('.local-decomposition-group');
                 if (!localContainer) {
-                    console.error('Yerel ayrıştırma grubu bulunamadı.');
+                    console.error('Parsing group not found.');
                     return;
                 }
 
@@ -1633,6 +1985,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Create new table
                 const newWrapper = createDecomposedTable({ origMode: false });
+                if (wrapper.dataset.baseColumns) {
+                    newWrapper.dataset.baseColumns = wrapper.dataset.baseColumns;
+                }
 
                 // Assigning local number
                 const newTitleElement = newWrapper.querySelector('h3');
@@ -1648,13 +2003,54 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check Decomposition button
             const checkDecompLocalBtn = document.createElement('button');
             checkDecompLocalBtn.type = 'button';
-            checkDecompLocalBtn.classList.add('button', 'small', 'check-decomp-local-btn');
-            checkDecompLocalBtn.textContent = 'Check Decomposition';
+            checkDecompLocalBtn.classList.add('button', 'pill', 'check-decomp-local-btn');
+            checkDecompLocalBtn.textContent = 'Decomposition Finished';
 
-            checkDecompLocalBtn.addEventListener('click', () => {
-                document.getElementById('checkDecompositionBtn')?.click();
+            checkDecompLocalBtn.addEventListener('click', async () => {
+                try {
+                    const relationGroup = wrapper.closest('.relation-group');
+                    if (!relationGroup) {
+                        throw new Error('Internal error: relationGroup not found for this relation.');
+                    }
+                    await handleRelationDecompositionCheck(relationGroup, wrapper, checkDecompLocalBtn);
+                } catch (err) {
+                    console.error('Decomposition check failed', err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Check Failed',
+                        text: err && err.message ? err.message : String(err),
+                        confirmButtonText: 'Close'
+                    });
+                }
             });
             footer.appendChild(checkDecompLocalBtn);
+
+            const changeLocalBtn = document.createElement('button');
+            changeLocalBtn.type = 'button';
+            changeLocalBtn.classList.add('button', 'pill', 'change-decomp-local-btn');
+            changeLocalBtn.textContent = 'Change Decomposition';
+            changeLocalBtn.style.marginLeft = '5px';
+            changeLocalBtn.style.display = 'none';
+            changeLocalBtn.addEventListener('click', async () => {
+                const relationGroup = wrapper.closest('.relation-group');
+                if (!relationGroup) {
+                    return;
+                }
+                const confirm = await Swal.fire({
+                    title: 'Confirm Change',
+                    text: 'Are you sure you want to change the decomposition? All calculation results will be reset.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6',
+                    confirmButtonText: 'Yes, change it!'
+                });
+                if (confirm.isConfirmed) {
+                    unlockDecomposedTables(relationGroup);
+                    Swal.fire('Reset!', 'Decomposition is now editable.', 'info');
+                }
+            });
+            footer.appendChild(changeLocalBtn);
 
             wrapper.appendChild(footer);
         }
@@ -1887,5 +2283,4 @@ document.addEventListener('DOMContentLoaded', () => {
     if (showBcnfTablesBtn) {
         showBcnfTablesBtn.addEventListener('click', handleShowBcnfTables);
     }
-
 });

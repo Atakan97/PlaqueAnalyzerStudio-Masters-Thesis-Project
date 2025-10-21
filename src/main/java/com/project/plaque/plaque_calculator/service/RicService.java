@@ -189,9 +189,9 @@ public class RicService {
 	// Producing a short summary for logging/UI to user.
 	private String describeAttempt(RicAttempt attempt) {
 		if (!attempt.monteCarlo()) {
-			return "computed with exact values";
+			return "with exact values";
 		}
-		return "computed Monte Carlo approximation with " + String.format(Locale.US, "%,d", attempt.samples()) + " samples";
+		return "Monte Carlo approximation with " + String.format(Locale.US, "%,d", attempt.samples()) + " samples";
 	}
 
 	private String formatDuration(long elapsedMs) {

@@ -4,7 +4,7 @@ import java.util.List;
 
 
  // Wrapper request to submit multiple DecomposeRequest objects (one per decomposed table)
- // Reuse DecomposeRequest for per-table options (columns, manualData, flags).
+ // Reuse DecomposeRequest for per-table options (columns, manualData, flags)
 public class DecomposeAllRequest {
 	private List<DecomposeRequest> tables;
 	// optional global flags
@@ -15,6 +15,8 @@ public class DecomposeAllRequest {
 	private int samples;
 	private String manualData;
 	private String fds;
+	// Limits checks to a subset of the original relation (used for nested normalization)
+	private List<Integer> baseColumns;
 
 	public DecomposeAllRequest() {}
 
@@ -41,4 +43,7 @@ public class DecomposeAllRequest {
 
 	public String getFds() { return fds; }
 	public void setFds(String fds) { this.fds = fds; }
+
+	public List<Integer> getBaseColumns() { return baseColumns; }
+	public void setBaseColumns(List<Integer> baseColumns) { this.baseColumns = baseColumns; }
 }

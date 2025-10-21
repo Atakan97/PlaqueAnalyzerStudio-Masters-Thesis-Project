@@ -65,8 +65,8 @@ public class NormalizationController {
 	// Adding new API method
 	@PostMapping("/log-success")
 	public ResponseEntity<?> logBcnfSuccess(@RequestParam("userName") String userName,
-											 @RequestParam("attempts") int attempts,
-											 @RequestParam("elapsedTime") long elapsedTime) {
+											@RequestParam("attempts") int attempts,
+											@RequestParam("elapsedTime") long elapsedTime) {
 		try {
 			logService.logBcnfSuccess(userName, attempts, elapsedTime);
 			return ResponseEntity.ok().build();

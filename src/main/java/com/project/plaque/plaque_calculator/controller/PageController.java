@@ -92,13 +92,12 @@ public class PageController {
 		Map<String, Object> restoreState = (Map<String, Object>) session.getAttribute(RESTORE_SESSION_KEY);
 		Object restoreFlag = session.getAttribute("usingDecomposedAsOriginal");
 		boolean restoreRequested = restoreFlag instanceof Boolean && (Boolean) restoreFlag && restoreState != null;
-		System.out.println("[PageController] normalizePage - restoreRequested=" + restoreRequested + ", historySize=" + (history == null ? 0 : history.size()));
-
 		if (restoreRequested) {
 			System.out.println("[PageController] Using restoreState: " + gson.toJson(restoreState));
 			model.addAttribute("currentRelationsManualJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
 			model.addAttribute("currentRelationsColumnsJson", gson.toJson(restoreState.getOrDefault("columnsPerTable", Collections.emptyList())));
 			model.addAttribute("currentRelationsFdsJson", gson.toJson(restoreState.getOrDefault("fdsPerTable", Collections.emptyList())));
+			model.addAttribute("currentRelationsFdsOriginalJson", gson.toJson(restoreState.getOrDefault("fdsPerTableOriginal", Collections.emptyList())));
 			model.addAttribute("currentGlobalRicJson", gson.toJson(restoreState.getOrDefault("globalRic", Collections.emptyList())));
 			model.addAttribute("currentUnionColsJson", gson.toJson(restoreState.getOrDefault("unionCols", Collections.emptyList())));
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
@@ -107,8 +106,8 @@ public class PageController {
 
 			// make sure we don't reuse stale state on future loads
 			session.removeAttribute(RESTORE_SESSION_KEY);
+			session.removeAttribute("usingDecomposedAsOriginal");
 		} else if (history != null && !history.isEmpty()) {
-			// Step 2 and other
 			Map<String, Object> currentState = history.get(history.size() - 1);
 			System.out.println("[PageController] Using history tail state: " + gson.toJson(currentState));
 
@@ -116,29 +115,29 @@ public class PageController {
 			model.addAttribute("currentRelationsManualJson", gson.toJson(currentState.get("manualPerTable")));
 			model.addAttribute("currentRelationsColumnsJson", gson.toJson(currentState.get("columnsPerTable")));
 			model.addAttribute("currentRelationsFdsJson", gson.toJson(currentState.get("fdsPerTable")));
+			model.addAttribute("currentRelationsFdsOriginalJson", gson.toJson(currentState.get("fdsPerTableOriginal")));
 			model.addAttribute("currentGlobalRicJson", gson.toJson(currentState.get("globalRic")));
 			model.addAttribute("currentUnionColsJson", gson.toJson(currentState.get("unionCols")));
+			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(currentState.get("manualPerTable")));
 			model.addAttribute("initialCalcTableJson", "[]");
 			model.addAttribute("ricJson", "[]");
-
 		} else {
 			// Step 1
 			String initJson = (String) session.getAttribute("initialCalcTableJson");
 			String ricJson = (String) session.getAttribute("originalTableJson");
-
 			model.addAttribute("initialCalcTableJson", initJson != null ? initJson : "[]");
 			model.addAttribute("ricJson", ricJson != null ? ricJson : "[]");
-
 			// Set the fields used for the second stage to empty
 			model.addAttribute("currentRelationsManualJson", "[]");
 			model.addAttribute("currentRelationsColumnsJson", "[]");
 			model.addAttribute("currentRelationsFdsJson", "[]");
+			model.addAttribute("currentRelationsFdsOriginalJson", "[]");
+			model.addAttribute("currentGlobalRicJson", "[]");
+			model.addAttribute("currentUnionColsJson", "[]");
+			model.addAttribute("currentGlobalManualRowsJson", "[]");
 		}
 
-		// Read user fdList and computed fdListWithClosure
 		String fdList = (String) session.getAttribute("fdList");
-
-		// Normalize user list into a set for comparison (standardize arrows/commas)
 		Set<String> userFds = new LinkedHashSet<>();
 		if (fdList != null && !fdList.isBlank()) {
 			String[] parts = fdList.split("[;\\r\\n]+");
@@ -155,11 +154,9 @@ public class PageController {
 		@SuppressWarnings("unchecked")
 		List<FD> originalFDs = (List<FD>) session.getAttribute("originalFDs");
 		if (originalFDs == null) {
-			originalFDs = new ArrayList<>(); // Güvenlik önlemi
+			originalFDs = new ArrayList<>(); // Security measure
 		}
 
-		//
-		// Integrating FDService
 		List<FD> transitiveFDs = fdService.findTransitiveFDs(originalFDs);
 
 		// Sort original FDs within itself

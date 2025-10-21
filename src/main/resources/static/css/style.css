@@ -13,6 +13,48 @@ body {
     align-items: center;
     min-height: 100vh;
 }
+
+.section-heading-sm {
+    position: relative;
+    margin: 12px 0 24px;
+    font-size: 1.9rem;
+    font-weight: 620;
+    color: #0f172a;
+    letter-spacing: -0.012em;
+    padding-left: 16px;
+}
+
+.section-heading-sm::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 68%;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #22d3ee 0%, #6366f1 100%);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.25);
+}
+
+.section-subheading {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 12px;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.section-subheading::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #22d3ee, #6366f1);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+}
 .container {
     background: #ffffff;
     border: 1px solid rgba(226, 232, 240, 0.8);
@@ -136,6 +178,7 @@ body {
     margin-bottom: 30px;
     border: 1px solid #e2e8f0;
     box-sizing: border-box;
+    min-height: 450px;
 }
 
 /* File upload style section */
@@ -936,10 +979,32 @@ input[type="file"]::file-selector-button:hover {
 }
 .decomposed-content {
     display: flex;
+    flex-direction: column;
     gap: 1rem;
 }
-.fd-list-container {
-    min-width: 150px;
+.decomposed-table-holder {
+    flex: 1;
+    min-width: 100%;
+}
+.fd-inline-panel--compact {
+    margin: 12px 0 0;
+    padding: 14px 18px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+.fd-inline-panel--compact ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.fd-inline-panel--compact ul li {
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-weight: 600;
+    color: #1f2937;
 }
 #decomposedTablesContainer {
     display: flex;
@@ -1196,10 +1261,119 @@ a.button {
     margin-bottom: 24px;
 }
 
+.bcnf-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.bcnf-badge {
+    align-self: flex-start;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bcnf-badge-icon {
+    font-size: 1rem;
+    filter: drop-shadow(0 4px 8px rgba(59, 130, 246, 0.25));
+}
+
+.bcnf-title {
+    margin: 0;
+    font-size: 2.25rem;
+    font-weight: 650;
+    letter-spacing: -0.018em;
+    color: #0f172a;
+}
+
+.bcnf-subtitle {
+    margin: 0;
+    max-width: 640px;
+    color: #475569;
+    line-height: 1.6;
+    font-size: 1rem;
+}
+
 .bcnf-tables-container {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
 }
+
+.bcnf-section {
+    margin-top: 32px;
+}
+
+.bcnf-section-title {
+    margin: 0 0 18px;
+    font-size: 1.6rem;
+    font-weight: 620;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: #1f2937;
+}
+
+.bcnf-section-title::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #22d3ee, #6366f1);
+    box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.2);
+}
+
+.bcnf-table-card {
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 18px;
+    padding: 22px 24px;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.bcnf-table-card h4 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.bcnf-table-card .fd-list-container {
+    margin: 0;
+    padding: 12px 16px;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+
+.bcnf-table-card .fd-list-container h5 {
+    margin: 0 0 10px;
+    font-size: 0.95rem;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.bcnf-table-card .fd-list-container ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #1f2937;
+    line-height: 1.4;
+}
+
 .bcnf-log-section {
     margin: 48px auto 0;
     max-width: 520px;
@@ -1214,12 +1388,6 @@ a.button {
 .bcnf-log-section h3 {
     margin-top: 0;
     margin-bottom: 16px;
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: #1e293b;
-}
-
-.bcnf-log-section form {
     display: flex;
     flex-direction: column;
     gap: 16px;
