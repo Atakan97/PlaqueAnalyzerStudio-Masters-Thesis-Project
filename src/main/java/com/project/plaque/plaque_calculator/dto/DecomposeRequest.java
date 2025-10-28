@@ -10,6 +10,7 @@ public class DecomposeRequest {
 	private int timeLimit;
 	private boolean monteCarlo;
 	private int samples;
+	private List<Integer> baseColumns;
 
 	// No-arg constructor
 	public DecomposeRequest() {}
@@ -32,4 +33,7 @@ public class DecomposeRequest {
 
 	public int getSamples() { return samples; }
 	public void setSamples(int samples) { this.samples = samples; }
+
+	public List<Integer> getBaseColumns() { return baseColumns; }
+	public void setBaseColumns(List<Integer> baseColumns) { this.baseColumns = baseColumns; }
 }

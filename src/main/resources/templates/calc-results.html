@@ -10,6 +10,8 @@
 <form th:action="@{/calc}" method="get" class="return-to-input-form">
   <input type="hidden" name="inputData" th:value="${inputData}" />
   <input type="hidden" name="fdList" th:value="${fdList}" />
+  <input type="hidden" name="monteCarlo" th:value="${monteCarloSelected}" />
+  <input type="hidden" name="samples" th:value="${monteCarloSamples}" />
   <button type="submit" class="button pill">← Return to Input</button>
 </form>
 
@@ -24,16 +26,15 @@
 
 <div class="results-container" style="max-width: 1200px; margin: 0 auto; padding: 20px;">
 
-  <div th:if="${fdList != null and fdList != ''}" id="fdListSection">
+  <div th:if="${fdList != null and fdList != ''}" class="table-wrapper fd-results-wrapper">
     <h3 class="result-section-title">Functional Dependencies:</h3>
-    <ul id="fdListUl">
+    <ul id="fdListUl" class="fd-pill-list">
       <li th:each="fd : ${fdList.split(';')}" th:text="${fd}">X->Y</li>
     </ul>
 
     <button id="showClosureBtn"
             th:if="${transitiveFdStrings != null and !transitiveFdStrings.isEmpty()}"
-            class="small"
-            style="margin-top: 10px;">Show Transitive Closure FDs</button>
+            class="small fd-closure-btn">Show Transitive Closure FDs</button>
   </div>
 
   <div class="tables-side-by-side">
@@ -111,6 +112,6 @@
     window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
     /*]]>*/
   </script>
-  <script th:src="@{/js/results.js}"></script> <a th:href="@{/logout}" class="student-logout-button">Logout</a>
+  <script th:src="@{/js/results.js}"></script>
 </body>
 </html>

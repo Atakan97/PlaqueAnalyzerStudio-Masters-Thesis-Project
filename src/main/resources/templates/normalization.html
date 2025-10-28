@@ -15,6 +15,7 @@
     window.currentRelationsColumns = /*[[${currentRelationsColumnsJson}]]*/ [];
     window.currentRelationsFds = /*[[${currentRelationsFdsJson}]]*/ [];
     window.currentRelationsFdsOriginal = /*[[${currentRelationsFdsOriginalJson}]]*/ [];
+    window.currentRelationsRic = /*[[${currentRelationsRicJson}]]*/ [];
     window.currentUnionCols = /*[[${currentUnionColsJson}]]*/ [];
     window.currentGlobalManualRows = /*[[${currentGlobalManualRowsJson}]]*/ [];
     window.currentGlobalRic = /*[[${currentGlobalRicJson}]]*/ [];
@@ -31,9 +32,12 @@
 
   <div class="norm-header">
     <h2 class="section-heading-sm">Normalization Assistant</h2>
-    <a th:if="${canReturn}" th:href="@{/normalize/previous}" class="button pill return-previous-btn">
-      Return to Previous Step
-    </a>
+    <div class="norm-header-actions">
+      <a th:if="${canReturn}" th:href="@{/normalize/previous}" class="button pill return-previous-btn">
+        ← Return to Previous Step
+      </a>
+      <a th:href="@{/calc-results}" class="button pill return-results-btn">← Return to Calculation Results</a>
+    </div>
   </div>
 
   <div class="main-normalization-flex">
@@ -58,19 +62,27 @@
       <h3 class="section-subheading">Original Table</h3>
 
       <div id="originalTableContainer"></div>
+      <div class="original-table-controls">
+        <button id="originalShowRicBtn" type="button" class="small" style="display:none">Show Information Contents</button>
+        <button id="originalReturnBtn" type="button" class="small" style="display:none">Return to Input</button>
+      </div>
     </div>
 
-  </div> <div class="orig-with-add">
-  <div class="global-actions">
-    <button id="addTable" class="button pill">+ Add Decomposed Table</button>
-
-    <button type="button" id="decompositionFinishedBtn" class="button pill">Decomposition Finished</button>
-    <button type="button" id="changeDecompositionBtn" class="button pill" style="display:none">Change Decomposition</button>
-
   </div>
-</div>
 
-  <div id="decomposedTablesContainer"></div>
+  <div class="orig-with-add">
+    <div class="global-actions">
+      <button id="addTable" class="button pill">+ Add Decomposed Table</button>
+
+      <button type="button" id="decompositionFinishedBtn" class="button pill">Decomposition Finished</button>
+      <button type="button" id="changeDecompositionBtn" class="button pill" style="display:none">Change Decomposition</button>
+
+    </div>
+  </div>
+
+  <div id="decomposedRelationsContainer"></div>
+
+  <div id="decomposedTablesContainer" style="display:none"></div>
 
   <div id="dpLjStatusBox" style="display:none; margin:18px 0; padding:12px; border-radius:6px; background:#fbfbfb; border:1px solid #ddd;">
     <div id="dpLjMessages" style="margin-bottom:8px"></div>
@@ -78,7 +90,7 @@
 
   <div id="normalizationStepActions" style="text-align:right">
     <button id="computeAllBtn" type="button" data-auto-compute="true" style="display:none" class="compute-btn pill">Compute Plaque</button>
-    <button id="continueNormalizationBtn" type="button" style="display:none" class="button pill">Continue to Normalization</button>
+    <button id="continueNormalizationBtn" type="button" style="display:none" class="button pill">Continue Normalization</button>
     <button id="showBcnfTablesBtn" type="button" style="display:none" class="button pill">Show the BCNF Tables</button>
   </div>
 
@@ -91,6 +103,7 @@
   window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
   // Incoming list for coloring
   window.fdInferred = /*[[${fdInferred}]]*/ [];
+  window.alreadyBcnf = /*[[${alreadyBcnf}]]*/ false;
   /*]]>*/
 </script>
 </body>

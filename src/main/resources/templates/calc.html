@@ -2,7 +2,7 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8" />
-  <title>Plaque Calculator</title>
+  <title>PlaqueAnalyzer Studio</title>
   <link rel="stylesheet" th:href="@{/css/style.css}" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 
@@ -11,8 +11,12 @@
 
 <div class="app-brand">
   <div class="brand-text">
-    <span class="brand-name">PlaqueCalculator</span>
-    <span class="brand-tagline">Calculate • Display • Normalize Data Plaque</span>
+    <span class="brand-name">PlaqueAnalyzer Studio</span>
+    <span class="brand-tagline">
+      <span class="brand-tagline__scroller">
+        <span class="brand-tagline__text">Analyze Data Redundancy • Visualize Plaque • Normalize Database Schema</span>
+      </span>
+    </span>
   </div>
 </div>
 <form id="calcForm"
@@ -22,13 +26,10 @@
 
   <div class="input-container">
     <div class="input-column">
-      <h2 class="section-heading">Input & Parameters</h2>
-
-      <div class="tab-bar">
-        <button type="button" id="tab-upload" class="tab active">Upload CSV & Enter Manual Data</button>
-      </div>
+      <h2 class="section-heading">Input Data</h2>
 
       <div id="section-upload" class="tab-content">
+        <p class="hint" style="margin-bottom: 10px;">Upload CSV file or enter data manually.</p>
         <input type="file" id="csvfile" name="csvfile" accept=".csv" />
 
         <hr style="margin: 15px 0; border: 0; border-top: 1px solid #ccc;"> <div id="manual-data-controls">
@@ -53,13 +54,10 @@
     </div>
 
     <div class="input-column">
-      <h2 class="section-heading">Functional Dependencies List</h2>
-
-      <div class="tab-bar">
-        <button type="button" id="tab-fd-manual" class="tab active">Upload FD File & Enter Manually</button>
-      </div>
+      <h2 class="section-heading">Functional Dependencies</h2>
 
       <div id="fd-manual" class="tab-content">
+        <p class="hint" style="margin-bottom: 10px;">Upload CSV file or enter FDs manually.</p>
         <div id="fd-upload-content">
           <input type="file" name="fdfile" id="fdfile" accept=".txt,.csv" />
         </div>
@@ -79,7 +77,7 @@
   </div>
   <div class="options">
   <label><input type="checkbox" id="mcCheckbox" name="monteCarlo" /> Use Monte Carlo Approximation</label>
-  <label># of Samples: <input type="number" id="samples" name="samples" value="50000" disabled /></label>
+  <label># of Samples: <input type="number" id="samples" name="samples" value="100000" disabled /></label>
 </div>
 
   <input type="hidden" name="manualData" id="manualData" />
@@ -241,7 +239,6 @@
     });
   }
 </script>
-<a th:href="@{/logout}" class="student-logout-button">Logout</a>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </body>
 </html>

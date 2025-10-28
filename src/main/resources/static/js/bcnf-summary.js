@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
         parsed = summaryData;
     }
 
+    const originalTableRaw = typeof parsed.originalTable === 'string' ? parsed.originalTable : '';
+    const originalRicMatrix = Array.isArray(parsed.originalRic) ? parsed.originalRic : [];
     const columnsPerTable = Array.isArray(parsed.columnsPerTable) ? parsed.columnsPerTable : [];
     const manualPerTable = Array.isArray(parsed.manualPerTable) ? parsed.manualPerTable : [];
     const localFdsPerTable = Array.isArray(parsed.fdsPerTable) ? parsed.fdsPerTable : [];
@@ -39,15 +41,91 @@ document.addEventListener('DOMContentLoaded', () => {
         window.bcnfElapsedSeconds = elapsedTime;
     }
 
+    const getPlaqueColorFn = typeof window.getPlaqueColor === 'function'
+        ? window.getPlaqueColor
+        : function getPlaqueColor(value) {
+            const darkness = Math.max(0, Math.min(1, 1 - value));
+            const lightness = 85 - 55 * darkness;
+            return `hsl(220, 85%, ${lightness}%)`;
+        };
+
+    const originalContainer = document.getElementById('bcnfOriginalTable');
     const tablesFragment = document.createDocumentFragment();
+
+    if (originalContainer && originalTableRaw) {
+        const originalSection = document.createElement('div');
+        originalSection.classList.add('bcnf-original-card');
+
+        const originalTable = document.createElement('table');
+        originalTable.classList.add('data-grid', 'bcnf-original-table');
+        const originalHead = originalTable.createTHead();
+        const originalHeadRow = originalHead.insertRow();
+
+        const originalRows = originalTableRaw.split(';').filter(Boolean);
+        const columnCount = originalRows[0]?.split(',').length || 0;
+        for (let colIdx = 0; colIdx < columnCount; colIdx += 1) {
+            const th = document.createElement('th');
+            th.textContent = (colIdx + 1).toString();
+            originalHeadRow.appendChild(th);
+        }
+
+        const originalBody = originalTable.createTBody();
+        originalRows.forEach((rowStr, rowIdx) => {
+            const row = originalBody.insertRow();
+            const cellValues = rowStr.split(',');
+            cellValues.forEach((value, colIdx) => {
+                const td = row.insertCell();
+                td.textContent = value;
+
+                let ricVal = NaN;
+                if (Array.isArray(originalRicMatrix) && Array.isArray(originalRicMatrix[rowIdx])) {
+                    ricVal = parseFloat(originalRicMatrix[rowIdx]?.[colIdx]);
+                }
+
+                if (!Number.isNaN(ricVal) && ricVal < 1) {
+                    td.classList.add('plaque-cell');
+                    td.style.backgroundColor = getPlaqueColorFn(ricVal);
+                    if (ricVal < 0.5) {
+                        td.classList.add('plaque-light-text');
+                    }
+                } else {
+                    td.classList.remove('plaque-cell');
+                    td.classList.remove('plaque-light-text');
+                    td.style.backgroundColor = '';
+                }
+            });
+        });
+
+        originalSection.appendChild(originalTable);
+        originalContainer.appendChild(originalSection);
+    }
 
     columnsPerTable.forEach((cols, tableIdx) => {
         const wrapper = document.createElement('div');
         wrapper.classList.add('bcnf-table-card');
 
-        const title = document.createElement('h4');
-        title.textContent = `Table ${tableIdx + 1}`;
-        wrapper.appendChild(title);
+        const fdSection = document.createElement('div');
+        fdSection.classList.add('fd-inline-panel', 'fd-inline-panel--compact', 'bcnf-fd-panel');
+        const fdTitle = document.createElement('h4');
+        fdTitle.textContent = 'Functional Dependencies:';
+        fdSection.appendChild(fdTitle);
+        const ul = document.createElement('ul');
+        ul.classList.add('fd-pill-list');
+        const fdListRaw = (originalFdsPerTable[tableIdx] ?? localFdsPerTable[tableIdx]) || '';
+        const fdList = typeof fdListRaw === 'string'
+            ? fdListRaw.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean)
+            : [];
+        fdList.forEach(fd => {
+            const li = document.createElement('li');
+            li.textContent = fd;
+            ul.appendChild(li);
+        });
+        if (fdList.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = '—';
+            ul.appendChild(li);
+        }
+        fdSection.appendChild(ul);
 
         const table = document.createElement('table');
         table.classList.add('data-grid');
@@ -79,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let ricVal = NaN;
                 if (Array.isArray(localRicMatrix) && Array.isArray(localRicMatrix[rowIdx]) && localRicMatrix[rowIdx][colIdx] != null) {
                     ricVal = parseFloat(localRicMatrix[rowIdx][colIdx]);
-                } else if (globalRic && Array.isArray(globalRic) && Array.isArray(globalRic[rowIdx])) {
+                } else if (Array.isArray(globalRic) && Array.isArray(globalRic[rowIdx])) {
                     const unionIdx = columnIndices[colIdx];
                     if (Array.isArray(unionCols)) {
                         const globalColIndex = unionCols.indexOf(unionIdx);
@@ -91,37 +169,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!Number.isNaN(ricVal) && ricVal < 1) {
                     td.classList.add('plaque-cell');
-                    const lightness = 10 + 90 * ricVal;
-                    td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                    td.style.backgroundColor = getPlaqueColorFn(ricVal);
+                    if (ricVal < 0.5) {
+                        td.classList.add('plaque-light-text');
+                    } else {
+                        td.classList.remove('plaque-light-text');
+                    }
+                } else {
+                    td.classList.remove('plaque-cell');
+                    td.classList.remove('plaque-light-text');
+                    td.style.backgroundColor = '';
                 }
             });
         });
 
-        wrapper.appendChild(table);
-
-        const fdListRaw = (originalFdsPerTable[tableIdx] ?? localFdsPerTable[tableIdx]) || '';
-        const fdList = typeof fdListRaw === 'string'
-            ? fdListRaw.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean)
-            : [];
-
-        const fdSection = document.createElement('div');
-        fdSection.classList.add('fd-list-container');
-        const fdTitle = document.createElement('h5');
-        fdTitle.textContent = 'Functional Dependencies';
-        fdSection.appendChild(fdTitle);
-        const ul = document.createElement('ul');
-        fdList.forEach(fd => {
-            const li = document.createElement('li');
-            li.textContent = fd;
-            ul.appendChild(li);
-        });
-        if (fdList.length === 0) {
-            const li = document.createElement('li');
-            li.textContent = '—';
-            ul.appendChild(li);
-        }
-        fdSection.appendChild(ul);
         wrapper.appendChild(fdSection);
+        wrapper.appendChild(table);
 
         tablesFragment.appendChild(wrapper);
     });

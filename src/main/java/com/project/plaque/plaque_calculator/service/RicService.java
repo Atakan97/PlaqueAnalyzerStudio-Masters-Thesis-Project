@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -100,13 +101,10 @@ public class RicService {
 				.collect(Collectors.joining(";"));
 		return computeRicFromManualData(manualData);
 	}
-
 	// One-arg version (API that front-end calls)
 	public double[][] computeRicFromManualData(String manualData) {
-		// Default: no FDs, no Monte Carlo
 		return computeRicFromManualData(manualData, "", false, 0);
 	}
-
 	// Double-arg version (manual data + top-level fds)
 	public double[][] computeRicFromManualData(String manualEncoded, String topLevelFds) {
 		return computeRicFromManualData(manualEncoded, topLevelFds, false, 0);
@@ -122,14 +120,31 @@ public class RicService {
 	 * tracked in the app, so the UI can show progress to the user.
 	 */
 	public RicComputationResult computeRicAdaptive(String manualEncoded, String topLevelFds,
-												    boolean initialMonteCarlo, int initialSamples) {
+												   boolean initialMonteCarlo, int initialSamples) {
+		return computeRicAdaptive(manualEncoded, topLevelFds, initialMonteCarlo, initialSamples, null);
+	}
+
+	public RicComputationResult computeRicAdaptive(String manualEncoded, String topLevelFds,
+												   boolean initialMonteCarlo, int initialSamples,
+												   Consumer<String> progressCallback) {
 		List<RicAttempt> attempts = buildAttempts(initialMonteCarlo, initialSamples);
 		List<String> steps = new ArrayList<>();
 		RuntimeException lastException = null;
 
+		Consumer<String> recordStep = message -> {
+			steps.add(message);
+			if (progressCallback != null) {
+				try {
+					progressCallback.accept(message);
+				} catch (Exception ignored) {
+					// ignore callback failures so computation can continue
+				}
+			}
+		};
+
 		for (RicAttempt attempt : attempts) {
 			String description = describeAttempt(attempt);
-			steps.add("Starting " + description + ".");
+			recordStep.accept("Starting " + description + ".");
 			long startNs = System.nanoTime();
 			try {
 				double[][] matrix = computeRicFromManualDataInternal(
@@ -140,19 +155,23 @@ public class RicService {
 						attempt.samples()
 				);
 				long elapsedMs = Duration.ofNanos(System.nanoTime() - startNs).toMillis();
-				steps.add("Completed " + description + " in " + formatDuration(elapsedMs) + ".");
+				recordStep.accept("Completed " + description + " in " + formatDuration(elapsedMs) + ".");
 				return new RicComputationResult(matrix, description, List.copyOf(steps));
 			} catch (RicTimeoutException timeout) {
-				steps.add("Timed out while " + description + " after " + attempt.timeoutSeconds() + " seconds; moving on to the next stage.");
+				recordStep.accept("Timed out while " + description + " after "
+						+ attempt.timeoutSeconds() + " seconds; moving on to the next stage.");
 				lastException = timeout;
 			} catch (RuntimeException ex) {
-				steps.add("Failed while " + description + ": " + ex.getMessage());
-				throw new RicComputationException("RIC computation failed during " + description, List.copyOf(steps), ex);
+				recordStep.accept("Failed while " + description + ": " + ex.getMessage());
+				throw new RicComputationException("RIC computation failed during "
+						+ description, List.copyOf(steps), ex);
 			}
 		}
 
+		String failureMsg = "RIC computation did not finish after fallback strategies.";
+		recordStep.accept(failureMsg);
 		throw new RicComputationException(
-				"RIC computation did not finish after fallback strategies",
+				failureMsg,
 				List.copyOf(steps),
 				lastException
 		);

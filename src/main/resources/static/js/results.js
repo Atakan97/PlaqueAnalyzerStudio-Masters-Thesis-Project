@@ -34,13 +34,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Function that calculates HSL lightness adjustment (Plaque Coloring)
-    function getPlaqueColor(value) {
+    window.getPlaqueColor = function getPlaqueColor(value) {
         // value: 0..1, 1 => no plaque (white)
         const darkness = Math.max(0, Math.min(1, 1 - value));
         // map darkness to lightness: light (85%) .. dark (30%)
         const lightness = 85 - 55 * darkness; // 85..30
         return `hsl(220, 85%, ${lightness}%)`;
-    }
+    };
 
     // Applying color scale
     function applyColorScale(tableSelector) {
@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Apply color only if value is between 0 and 1 (exclusive of 1)
                     if (!isNaN(val) && val >= 0 && val < 1) {
-                        td.style.backgroundColor = getPlaqueColor(val);
+                        td.style.backgroundColor = window.getPlaqueColor(val);
                         td.classList.add('plaque-cell');
 
                         if (val < 0.5) {

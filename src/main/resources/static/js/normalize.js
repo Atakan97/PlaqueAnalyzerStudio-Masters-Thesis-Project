@@ -3,7 +3,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const elapsedEl   = document.getElementById('elapsed');
     const attemptEl   = document.getElementById('attemptCount');
     const addTableBtn = document.getElementById('addTable');
+    const relationsContainer = document.getElementById('decomposedRelationsContainer');
     const decContainer= document.getElementById('decomposedTablesContainer');
+    const relationMetaMap = new Map();
+
 
     const IS_RESTORE_MODE = Array.isArray(window.currentRelationsColumns) && window.currentRelationsColumns.length > 0;
 
@@ -21,7 +24,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const changeDecompositionBtn = document.getElementById('changeDecompositionBtn');
 
+    let raw = window.originalTable;
+    if (typeof raw === 'string' && raw.trim()) {
+        try { raw = JSON.parse(raw); } catch (e) { console.error("originalTable JSON parse error", e); raw = []; }
+    }
+    const originalRows = Array.isArray(raw) ? raw : [];
+
+    let ricRaw = window.ricMatrixTable;
+    if (typeof ricRaw === 'string' && ricRaw.trim()) {
+        try { ricRaw = JSON.parse(ricRaw); } catch (e) { ricRaw = []; }
+    }
+    const ricMatrix = Array.isArray(ricRaw) ? ricRaw : [];
+
+    const alreadyBcnf = Boolean(window.alreadyBcnf);
+    if (alreadyBcnf) {
+        if (addTableBtn) addTableBtn.style.display = 'none';
+        if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
+        if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
+        if (computeAllBtn) computeAllBtn.style.display = 'none';
+        if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
+        if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'inline-block';
+
+        const manualRows = originalRows.map(row => Array.isArray(row) ? row.join(',') : '').filter(Boolean);
+        const manualDataString = manualRows.join(';');
+        const columnIndices = originalRows[0] ? originalRows[0].map((_, idx) => idx) : [];
+        const ricMatrixCopy = Array.isArray(ricMatrix) ? ricMatrix : [];
+
+        window._lastBcnfMeta = {
+            attempts: 0,
+            elapsed: 0
+        };
+
+        window._alreadyBcnfPayload = {
+            columnsPerTable: [columnIndices],
+            manualPerTable: [manualDataString],
+            fdsPerTable: [''],
+            fdsPerTableOriginal: [''],
+            ricPerTable: [ricMatrixCopy],
+            globalRic: ricMatrixCopy,
+            unionCols: columnIndices,
+            originalTable: manualDataString,
+            originalRic: ricMatrixCopy
+        };
+
+        const infoMessage = 'There is nothing to normalize since this table is already in BCNF.';
+        Swal.fire({
+            icon: 'info',
+            title: 'Already in BCNF',
+            text: infoMessage,
+            confirmButtonText: 'OK'
+        });
+    }
+
     const timeLimitInput     = document.getElementById('timeLimit');
+    const mcCheckboxInput    = document.getElementById('mcCheckbox');
+    const mcSamplesInput     = document.getElementById('samples');
 
     // Functional dependencies transitive closure calculation logic
     const showClosureNormBtn = document.getElementById('showClosureNormBtn');
@@ -32,6 +89,84 @@ document.addEventListener('DOMContentLoaded', () => {
     const fdItemsNorm = window.fdItems || [];
     // Available red FDs
     const fdInferredNorm = new Set(window.fdInferred || []);
+
+    function normalizeWindowArray(winVal) {
+        if (winVal == null) return [];
+        if (Array.isArray(winVal)) return winVal;
+        if (typeof winVal === 'string') {
+            const trimmed = winVal.trim();
+            if (!trimmed) return [];
+            if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || trimmed.startsWith('{')) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (Array.isArray(parsed)) return parsed;
+                } catch (e) {
+                    // fallback below
+                }
+            }
+            return [trimmed];
+        }
+        return [];
+    }
+
+    function normalizeManualEntry(value) {
+        if (value == null) return '';
+        if (Array.isArray(value)) {
+            if (value.length > 0 && Array.isArray(value[0])) {
+                return value
+                    .map(row => row.map(cell => (cell == null ? '' : String(cell).trim())).join(','))
+                    .filter(str => str.trim().length > 0)
+                    .join(';');
+            }
+            return value
+                .map(item => normalizeManualEntry(item))
+                .filter(str => str && str.trim().length > 0)
+                .join(';');
+        }
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) return '';
+            if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || trimmed.startsWith('{')) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    return normalizeManualEntry(parsed);
+                } catch (e) {
+                    /* fall through */
+                }
+            }
+            return trimmed;
+        }
+
+        return String(value).trim();
+    }
+
+    function normalizeToStringList(value) {
+        if (value == null) return [];
+        if (Array.isArray(value)) {
+            return value
+                .map(item => normalizeToStringList(item))
+                .flat()
+                .filter(Boolean);
+        }
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) return [];
+            if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || trimmed.startsWith('{')) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (Array.isArray(parsed)) {
+                        return normalizeToStringList(parsed);
+                    }
+                } catch (e) {
+                    // ignore JSON parse errors and fall back to splitting
+                }
+            }
+            return trimmed.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean);
+        }
+        const asString = String(value).trim();
+        return asString ? [asString] : [];
+    }
 
     // Appends FDs to the existing list with coloring
     function appendTransitiveFdsNorm(fdsToAppend) {
@@ -67,23 +202,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Parse original table (initialCalcTable passed from server as window.originalTable)
-    let raw = window.originalTable;
-    if (typeof raw === 'string' && raw.trim()) {
-        try { raw = JSON.parse(raw); } catch (e) { console.error("originalTable JSON parse error", e); raw = []; }
-    }
-    const originalRows = Array.isArray(raw) ? raw : [];
-
-    let ricRaw = window.ricMatrixTable;
-    if (typeof ricRaw === 'string' && ricRaw.trim()) {
-        try { ricRaw = JSON.parse(ricRaw); } catch (e) { ricRaw = []; }
-    }
-    const ricMatrix = Array.isArray(ricRaw) ? ricRaw : [];
-
     // Render original table with RIC coloring
     const origContainer = document.getElementById('originalTableContainer');
     const origTable     = document.createElement('table');
     origTable.classList.add('data-grid');
+    origTable.id = 'normalizationOrigTable';
     origTable.style.tableLayout = 'fixed';
     origTable.style.width = '100%';
 
@@ -100,6 +223,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const origTbody = origTable.createTBody();
 
+    const getPlaqueColorFn = typeof window.getPlaqueColor === 'function'
+        ? window.getPlaqueColor
+        : function getPlaqueColor(value) {
+            const darkness = Math.max(0, Math.min(1, 1 - value));
+            const lightness = 85 - 55 * darkness;
+            return `hsl(220, 85%, ${lightness}%)`;
+        };
+
     function renderOrigBody(data) {
         origTbody.innerHTML = '';
         data.forEach((row, r) => {
@@ -110,10 +241,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ricVal = parseFloat(ricMatrix[r]?.[c]);
                 if (!isNaN(ricVal) && ricVal < 1) {
                     td.classList.add('plaque-cell');
-                    const lightness = 10 + 90 * ricVal;
-                    td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                    td.style.backgroundColor = getPlaqueColorFn(ricVal);
+                    if (ricVal < 0.5) {
+                        td.classList.add('plaque-light-text');
+                    } else {
+                        td.classList.remove('plaque-light-text');
+                    }
                 } else {
-                    td.style.backgroundColor = 'white';
+                    td.style.backgroundColor = '';
+                    td.classList.remove('plaque-light-text');
                 }
                 td.dataset.origIdx = c;
             });
@@ -122,6 +258,82 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderOrigBody(originalRows);
     if (origContainer) origContainer.appendChild(origTable);
+
+    function applyRicColoring(tableEl) {
+        if (!tableEl || !ricMatrix || !ricMatrix.length) return;
+        const tbody = tableEl.tBodies[0];
+        if (!tbody) return;
+        Array.from(tbody.rows).forEach((tr, rowIdx) => {
+            const ricRow = ricMatrix[rowIdx];
+            if (!Array.isArray(ricRow)) return;
+            Array.from(tr.cells).forEach((td, colIdx) => {
+                const rawVal = ricRow[colIdx];
+                const val = rawVal == null ? NaN : parseFloat(rawVal);
+                if (!isNaN(val) && val >= 0 && val < 1) {
+                    td.style.backgroundColor = getPlaqueColorFn(val);
+                    td.classList.add('plaque-cell');
+                    if (val < 0.5) {
+                        td.classList.add('plaque-light-text');
+                    } else {
+                        td.classList.remove('plaque-light-text');
+                    }
+                } else {
+                    td.style.backgroundColor = '';
+                    td.classList.remove('plaque-cell');
+                    td.classList.remove('plaque-light-text');
+                }
+            });
+        });
+    }
+
+    const origRicTable = document.createElement('table');
+    origRicTable.classList.add('data-grid');
+    origRicTable.id = 'normalizationRicTable';
+    origRicTable.style.display = 'none';
+
+    if (colCount) {
+        const ricThead = origRicTable.createTHead();
+        const ricHeadRow = ricThead.insertRow();
+        for (let i = 0; i < colCount; i++) {
+            const th = document.createElement('th');
+            th.textContent = (i + 1).toString();
+            ricHeadRow.appendChild(th);
+        }
+    }
+    const ricTbody = origRicTable.createTBody();
+    originalRows.forEach((row, r) => {
+        const tr = ricTbody.insertRow();
+        row.forEach((_, c) => {
+            const td = tr.insertCell();
+            const ricVal = ricMatrix[r]?.[c];
+            td.textContent = ricVal != null ? ricVal : '';
+        });
+    });
+
+    if (origContainer) origContainer.appendChild(origRicTable);
+    applyRicColoring(origRicTable);
+
+    const originalShowRicBtn = document.getElementById('originalShowRicBtn');
+    const originalReturnBtn = document.getElementById('originalReturnBtn');
+
+    if (originalShowRicBtn && originalReturnBtn) {
+        if (ricMatrix && ricMatrix.length) {
+            originalShowRicBtn.style.display = 'inline-block';
+        }
+        originalShowRicBtn.addEventListener('click', () => {
+            origTable.style.display = 'none';
+            origRicTable.style.display = 'table';
+            originalShowRicBtn.style.display = 'none';
+            originalReturnBtn.style.display = 'inline-block';
+            applyRicColoring(origRicTable);
+        });
+        originalReturnBtn.addEventListener('click', () => {
+            origTable.style.display = 'table';
+            origRicTable.style.display = 'none';
+            originalShowRicBtn.style.display = 'inline-block';
+            originalReturnBtn.style.display = 'none';
+        });
+    }
 
     // Parse a single FD string like "1,4->3" or "1,4 -> 3" -> normalized "1,4->3"
     function normalizeFdString(fd) {
@@ -270,19 +482,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const fdsPayloadString = localFdsToSend.length > 0 ? localFdsToSend.join(';') : '';
 
         // Build payload (this is the body sent to /normalize/decompose)
+        const globalMonteCarlo = mcCheckboxInput ? mcCheckboxInput.checked : false;
+        const globalSamples = mcSamplesInput ? parseInt(mcSamplesInput.value || '0', 10) : 0;
+
         const payload = {
             columns: cols,
             manualData: manualData,
             fds: fdsPayloadString,
             timeLimit: parseInt(timeLimitInput?.value || '30', 10),
-            monteCarlo: false,
-            samples: 0
+            monteCarlo: globalMonteCarlo,
+            samples: globalMonteCarlo ? Math.max(globalSamples, 1) : 0
         };
         if (Array.isArray(baseColumns) && baseColumns.length > 0) {
             payload.baseColumns = baseColumns;
         }
 
-        console.log('computeRicForWrapper: sending /normalize/decompose payload=', payload);
+        console.log('RIC payload', payload);
 
         try {
             const resp = await fetch('/normalize/decompose', {
@@ -397,182 +612,285 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    let restoreMode = false;
-    // Restoring decomposed-as-original
-    try {
-        function normalizeWindowArray(winVal) {
-            if (winVal == null) return [];
-            if (Array.isArray(winVal)) return winVal;
-            if (typeof winVal === 'string') {
-                const s = winVal.trim();
-                if (s === '') return [];
-                try {
-                    // Just parse the incoming data assuming it represents a JSON array
-                    const parsed = JSON.parse(s);
-                    if (Array.isArray(parsed)) return parsed;
-                } catch (e) {
-                    // Return empty array if there is a JSON parse error
-                    return [];
-                }
-            }
-            return [];
-        }
+    function createRelationGroup({ relationId }) {
+        const host = (relationsContainer && relationsContainer.classList.contains('restore-layout'))
+            ? relationsContainer
+            : (decContainer || relationsContainer);
+        if (!host) return null;
+        const group = document.createElement('div');
+        group.classList.add('relation-group');
+        group.dataset.relationId = relationId;
+        group.style.display = 'flex';
+        group.style.flexDirection = 'column';
+        group.style.flexWrap = 'nowrap';
+        group.style.width = '100%';
+        group.style.alignItems = 'stretch';
+        group.style.justifyContent = 'stretch';
+        group.style.flex = '0 0 auto';
+        group.style.gap = '0';
 
-        const crColsRaw = window.currentRelationsColumns || null;
-        const crManualRaw = window.currentRelationsManual || null;
-        const crFdsRaw = window.currentRelationsFds || null;
-        const crFdsOriginalRaw = window.currentRelationsFdsOriginal || null;
-
-        const crCols = normalizeWindowArray(crColsRaw);
-        const crManual = normalizeWindowArray(crManualRaw);
-        const crFds = normalizeWindowArray(crFdsRaw);
-        const crFdsOriginal = normalizeWindowArray(crFdsOriginalRaw);
-
-        restoreMode = Array.isArray(crCols) && crCols.length > 0;
-        console.log('restoreMode?', restoreMode, { crColsRaw, crManualRaw, crFdsRaw, crCols, crManual, crFds });
-
-        if (restoreMode) {
-
-            // Hide old "Original Table"
-            if (origContainer) origContainer.style.display = 'none';
-
-            // Show global control buttons again in restore mode
-            if (addTableBtn) addTableBtn.style.display = 'inline-block'; // +Add Decomposed Table
-            const fdListContainer = document.getElementById('fdListContainer');
-            if (fdListContainer) fdListContainer.style.display = 'none'; // Hide FD list
-
-            // Hide Compute Plaque and Continue buttons (these should be visible after Decomposition Finished)
-            if (computeAllBtn) computeAllBtn.style.display = 'none';
-            if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
-
-            // Show Decomposition Finished button
-            if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
-
-            // Hide Change Decomposition button (should be visible after Decomposition Finished)
-            if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
-
-            const globalActionsDiv = document.querySelector('.global-actions');
-            if (globalActionsDiv) globalActionsDiv.style.display = 'none';
-
-            // Clean container and hide
-            if (decContainer) decContainer.innerHTML = '';
-            let restoreTableCounter = 0; // New R# counter
-
-            // Visible decContainer
-            if (decContainer) {
-                decContainer.style.display = 'flex';
-                decContainer.style.flexDirection = 'row';
-                decContainer.style.flexWrap = 'wrap';
-                decContainer.style.gap = '0';
-                decContainer.style.alignItems = 'flex-start';
-            }
-
-            for (let i = 0; i < crCols.length; i++) {
-                restoreTableCounter++;
-                let colsEntry = crCols[i];
-                // Convert the data coming as JSON or string to an array
-                if (typeof colsEntry === 'string') {
-                    try {
-                        const p = JSON.parse(colsEntry);
-                        colsEntry = Array.isArray(p) ? p : [];
-                    } catch (e) {
-                        colsEntry = colsEntry.replace(/[\[\]]/g, '').split(',').map(x => x.trim()).filter(Boolean).map(x => Number(x));
-                    }
-                }
-                colsEntry = Array.isArray(colsEntry) ? colsEntry.map(n => Number(n)) : [];
-
-                const manualStr = (typeof crManual[i] === 'string') ? crManual[i] : (crManual[i] == null ? '' : String(crManual[i]));
-                const fdsStrLocal = (typeof crFds[i] === 'string') ? crFds[i] : (crFds[i] == null ? '' : String(crFds[i]));
-                const fdsStrOriginal = (typeof crFdsOriginal[i] === 'string') ? crFdsOriginal[i] : (crFdsOriginal[i] == null ? '' : String(crFdsOriginal[i]));
-
-                const fdLocalList = (fdsStrLocal && fdsStrLocal.length > 0)
-                    ? fdsStrLocal.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean)
-                    : [];
-                const fdOriginalList = (fdsStrOriginal && fdsStrOriginal.length > 0)
-                    ? fdsStrOriginal.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean)
-                    : [];
-                const displayFdList = fdOriginalList.length > 0 ? fdOriginalList : fdLocalList;
-                const displayFdsStr = displayFdList.join(';');
-
-
-                // Vertical container to enclose Relation and its decomposed tables
-                const relationGroup = document.createElement('div');
-                relationGroup.classList.add('relation-group');
-                relationGroup.style.display = 'flex';
-                relationGroup.style.flexDirection = 'column';
-                relationGroup.style.flex = '0 0 950px';
-                relationGroup.style.width = '950px';
-                relationGroup.style.alignSelf = 'flex-start';
-                relationGroup.style.marginRight = '30px';
-
-                console.log('Restoring table', i, { colsEntry, manualStr, fdLocalList, fdOriginalList });
-                // Create wrapper in origMode so it behaves as "original replacement"
-                let w;
-                try {
-                    // Orig Mode: true (hide header/delete button), initial Columns: previous decomposed columns
-                    w = createDecomposedTable({
-                        origMode: true,
-                        initialColumns: colsEntry,
-                        initialManualData: manualStr,
-                        initialFds: displayFdsStr,
-                    });
-                    console.log('Restored wrapper', i, w);
-                    // Finalize the header assignment: Relation R1, R2, ...
-                    const titleElement = w.querySelector('h3');
-                    if(titleElement) {
-                        titleElement.textContent = `Relation R${restoreTableCounter}:`;
-                    }
-
-                    // Add a CSS class to make the newly created wrapper look like the "original table"
-                    w.classList.add('orig-as-decomposed-row-item');
-
-                    // Remove margins from wrapper inside R# table
-                    w.style.marginRight = '0';
-                    w.style.marginBottom = '0';
-
-                } catch (e) {
-                    console.error('createDecomposedTable failed during restore', e);
-                    continue;
-                }
-
-                // Create local decomposed tables container
-                const localDecompositionContainer = document.createElement('div');
-                localDecompositionContainer.classList.add('local-decomposition-group');
-
-                // KRİTİK: T# tablolarının yan yana akmasını sağla
-                localDecompositionContainer.style.display = 'flex';
-                localDecompositionContainer.style.flexWrap = 'wrap';
-                localDecompositionContainer.style.paddingTop = '10px';
-                localDecompositionContainer.style.borderTop = '1px dashed #ddd';
-                localDecompositionContainer.style.gap = '20px';
-
-                // Adding to dom
-                // R# add table and local container into relationGroup
-                relationGroup.appendChild(w);
-                relationGroup.appendChild(localDecompositionContainer);
-
-                // Add RelationGroup to main decContainer
-                decContainer.appendChild(relationGroup);
-
-                // Ensure dataset.projectedFds set and FD list visible
-                try {
-                    const fdListToStore = (fdsStr && fdsStr.length > 0) ? (fdsStr.split(/[;\\r\\n]+/).map(s => s.trim()).filter(Boolean)) : [];
-                    const fdOriginalList = (fdsStrOriginal && fdsStrOriginal.length > 0)
-                        ? fdsStrOriginal.split(/[;\\r\\n]+/).map(s => s.trim()).filter(Boolean)
-                        : fdListToStore;
-                    w.dataset.projectedFds = JSON.stringify(fdListToStore);
-                    w.dataset.projectedFdsOrig = JSON.stringify(fdOriginalList);
-                } catch (e) {
-                    try { w.dataset.projectedFds = '[]'; } catch (e2) {}
-                    try { w.dataset.projectedFdsOrig = '[]'; } catch (e3) {}
-                }
-            }
-        }
-    }  catch (e) {
-        console.warn('Restore (decomposed-as-original) failed', e);
+        host.appendChild(group);
+        relationMetaMap.set(group, { relationId, baseWrapper: null, localContainer: null });
+        return group;
     }
 
-    // Warnings area (for missing column messages)
+    function ensureLocalContainer(group) {
+        const meta = relationMetaMap.get(group);
+        if (!meta) return null;
+        if (meta.localContainer) return meta.localContainer;
+        const container = document.createElement('div');
+        container.classList.add('local-decomposition-group');
+        container.dataset.relationId = meta.relationId;
+        container.style.display = 'flex';
+        container.style.flexWrap = 'wrap';
+        container.style.paddingTop = '10px';
+        container.style.borderTop = '1px dashed #ddd';
+        container.style.gap = '20px';
+        container.style.width = '100%';
+        container.style.alignItems = 'flex-start';
+        group.appendChild(container);
+        meta.localContainer = container;
+        return container;
+    }
+
+    function renderRelationBaseWrapper(group, options = {}) {
+        const meta = relationMetaMap.get(group);
+        if (!meta) return null;
+
+        const {
+            columns = [],
+            manualData = '',
+            fdList = [],
+            fdOriginal = [],
+            ricMatrix = [],
+            displayFds = [],
+            relationTitle,
+            showFooter = true
+        } = options;
+
+        const resolvedDisplayFds = Array.isArray(displayFds) && displayFds.length
+            ? displayFds
+            : (fdOriginal.length ? fdOriginal : fdList);
+
+        const wrapper = createDecomposedTable({
+            origMode: true,
+            initialColumns: columns,
+            initialManualData: manualData,
+            initialFds: resolvedDisplayFds.join(';'),
+            initialRicMatrix: ricMatrix,
+            parentContainer: group
+        });
+
+        if (!wrapper) return null;
+
+        const titleEl = wrapper.querySelector('h3');
+        if (titleEl && relationTitle) titleEl.textContent = relationTitle;
+
+        if (fdList.length) {
+            try { wrapper.dataset.projectedFds = JSON.stringify(fdList); } catch (e) {}
+        }
+        if (fdOriginal.length) {
+            try { wrapper.dataset.projectedFdsOrig = JSON.stringify(fdOriginal); } catch (e) {}
+        } else if (resolvedDisplayFds.length) {
+            try { wrapper.dataset.projectedFdsOrig = JSON.stringify(resolvedDisplayFds); } catch (e) {}
+        }
+
+        const footer = wrapper.querySelector('.orig-as-decomposed-footer');
+        if (footer && !showFooter) footer.style.display = 'none';
+
+        meta.baseWrapper = wrapper;
+        return wrapper;
+    }
+
+    function renderHistoryRelations() {
+        console.groupCollapsed('renderHistoryRelations');
+        console.log('raw window.currentRelationsColumns:', window.currentRelationsColumns);
+        console.log('raw window.currentRelationsManual:', window.currentRelationsManual);
+        console.log('raw window.currentRelationsFds:', window.currentRelationsFds);
+        console.log('raw window.currentRelationsFdsOriginal:', window.currentRelationsFdsOriginal);
+        console.log('raw window.currentRelationsRic:', window.currentRelationsRic);
+
+        const colsRaw = window.currentRelationsColumns || null;
+        const crCols = normalizeWindowArray(colsRaw);
+        console.log('normalized columns:', crCols);
+        if (!Array.isArray(crCols) || crCols.length === 0) {
+            console.warn('renderHistoryRelations: no columns data available, aborting render.');
+            console.groupEnd();
+            return false;
+        }
+
+        const manualRaw = window.currentRelationsManual || null;
+        const fdsRaw = window.currentRelationsFds || null;
+        const fdsOriginalRaw = window.currentRelationsFdsOriginal || null;
+        const ricRaw = window.currentRelationsRic || null;
+
+        const crManual = normalizeWindowArray(manualRaw);
+        const crFds = normalizeWindowArray(fdsRaw);
+        const crFdsOriginal = normalizeWindowArray(fdsOriginalRaw);
+        const crRic = normalizeWindowArray(ricRaw);
+        console.log('normalized manual:', crManual);
+        console.log('normalized fds:', crFds);
+        console.log('normalized fds original:', crFdsOriginal);
+        console.log('normalized ric matrices:', crRic);
+
+        const host = relationsContainer || decContainer;
+        if (!host) return false;
+
+        relationMetaMap.clear();
+
+        host.innerHTML = '';
+        host.classList.add('restore-layout');
+        host.style.display = 'flex';
+        host.style.flexWrap = 'wrap';
+        host.style.gap = '20px';
+        host.style.alignItems = 'flex-start';
+        host.style.justifyContent = 'flex-start';
+
+        const isRestoreHost = host === relationsContainer;
+        console.log('renderHistoryRelations: host prepared', {
+            hostId: host?.id,
+            isRestoreHost,
+            hostClassList: host ? Array.from(host.classList) : [],
+            targetChildCount: crCols.length
+        });
+
+        if (host !== relationsContainer && relationsContainer) {
+            relationsContainer.innerHTML = '';
+            relationsContainer.style.display = 'none';
+        }
+        if (host === relationsContainer && relationsContainer) {
+            relationsContainer.style.display = 'flex';
+        }
+        if (host === relationsContainer && decContainer) {
+            decContainer.style.display = 'none';
+        }
+
+        const aggregatedFds = [];
+        const aggregatedSeen = new Set();
+        const appendAggregatedFds = (list) => {
+            if (!Array.isArray(list)) return;
+            list.forEach(fd => {
+                const normalized = typeof fd === 'string' ? fd.trim() : String(fd || '').trim();
+                if (!normalized) return;
+                if (aggregatedSeen.has(normalized)) return;
+                aggregatedSeen.add(normalized);
+                aggregatedFds.push(normalized);
+            });
+        };
+
+        for (let i = 0; i < crCols.length; i++) {
+            let colsEntry = crCols[i];
+            if (typeof colsEntry === 'string') {
+                try {
+                    const parsed = JSON.parse(colsEntry);
+                    colsEntry = Array.isArray(parsed) ? parsed : [];
+                } catch (e) {
+                    colsEntry = colsEntry.replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean).map(Number);
+                    console.warn('renderHistoryRelations: failed to parse columns', e);
+                }
+            }
+
+            const columns = Array.isArray(colsEntry) ? colsEntry.map(Number) : [];
+
+            const manualData = normalizeManualEntry(crManual[i]);
+            const localFds = normalizeToStringList(crFds[i]);
+            const originalFds = normalizeToStringList(crFdsOriginal[i]);
+            console.log('renderHistoryRelations: preparing table', i, {
+                columns,
+                manualData,
+                localFds,
+                originalFds
+            });
+
+            let ricMatrixForTable = [];
+            if (Array.isArray(crRic) && i < crRic.length) {
+                try {
+                    const entry = crRic[i];
+                    console.log('renderHistoryRelations: ric matrix entry', i, entry);
+                    if (Array.isArray(entry)) {
+                        ricMatrixForTable = entry;
+                    } else if (typeof entry === 'string' && entry.trim()) {
+                        const parsed = JSON.parse(entry);
+                        if (Array.isArray(parsed)) ricMatrixForTable = parsed;
+                    }
+                } catch (e) {
+                    ricMatrixForTable = [];
+                }
+            }
+
+            const group = createRelationGroup({ relationId: `history-${i}` });
+            console.log('renderHistoryRelations: relation group created', i, group);
+            if (!group) continue;
+
+            const relationTitle = `Relation R${i + 1}`;
+            const displayFds = originalFds.length ? originalFds : localFds;
+            appendAggregatedFds(displayFds);
+
+            const baseWrapper = renderRelationBaseWrapper(group, {
+                columns,
+                manualData,
+                fdList: localFds,
+                fdOriginal: originalFds.length ? originalFds : localFds,
+                displayFds,
+                ricMatrix: Array.isArray(ricMatrixForTable) ? ricMatrixForTable : [],
+                relationTitle
+            });
+
+            if (baseWrapper) {
+                console.log('renderHistoryRelations: base wrapper ready', i, baseWrapper);
+                console.log('renderHistoryRelations: base wrapper dataset', i, { dataset: { ...baseWrapper.dataset }, childCount: baseWrapper.childElementCount });
+                const fdHeading = baseWrapper.querySelector('.fd-list-container h4');
+                if (fdHeading) fdHeading.style.display = 'block';
+            }
+
+            ensureLocalContainer(group);
+            console.log('renderHistoryRelations: group children count', i, group.children.length);
+        }
+        console.log('renderHistoryRelations: final host child count', host.children.length);
+        console.groupEnd();
+
+        if (origContainer) origContainer.style.display = 'none';
+        const fdListContainer = document.getElementById('fdListContainer');
+        if (fdListContainer) {
+            fdListContainer.style.display = aggregatedFds.length ? 'block' : 'none';
+            const fdListEl = fdListContainer.querySelector('#fdListUl');
+            if (fdListEl) {
+                fdListEl.innerHTML = '';
+                aggregatedFds.forEach(fd => {
+                    const li = document.createElement('li');
+                    li.textContent = fd;
+                    fdListEl.appendChild(li);
+                });
+            }
+        }
+        if (addTableBtn) addTableBtn.style.display = isRestoreHost ? 'none' : 'inline-block';
+        if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
+        if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
+        if (computeAllBtn) computeAllBtn.style.display = 'none';
+        if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
+
+        return true;
+    }
+
+    const historyRendered = renderHistoryRelations();
+    if (!historyRendered) {
+        relationMetaMap.clear();
+        if (relationsContainer) {
+            relationsContainer.innerHTML = '';
+            relationsContainer.style.display = 'none';
+            relationsContainer.classList.remove('restore-layout');
+        }
+        if (decContainer) {
+            decContainer.style.display = 'flex';
+            decContainer.style.flexWrap = 'wrap';
+            decContainer.style.gap = '20px';
+            decContainer.classList.remove('restore-layout');
+        }
+        if (origContainer) {
+            origContainer.style.display = 'block';
+        }
+    }
+ // Warnings area (for missing column messages)
     let warningsArea = document.getElementById('normalizeWarnings');
     if (!warningsArea) {
         warningsArea = document.createElement('div');
@@ -1260,10 +1578,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function runGlobalRicComputation(wrappers, autoTriggered = false, options = {}) {
-        const {
-            scopedBaseColumns = null,
-            relationGroup = null
-        } = options;
+        const { scopedBaseColumns = null, relationGroup = null } = options;
 
         if (!Array.isArray(wrappers) || wrappers.length === 0) {
             Swal.fire({
@@ -1277,21 +1592,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tablesPayload = [];
         const perTableFdsArrays = [];
+        const globalMonteCarloFlag = mcCheckboxInput ? mcCheckboxInput.checked : false;
+        const globalSamplesVal = mcSamplesInput ? Math.max(parseInt(mcSamplesInput.value || '0', 10), 1) : 0;
+
         for (const w of wrappers) {
             let cols = [];
-            try { cols = JSON.parse(w.dataset.columns || '[]'); } catch (e) { cols = []; }
-            const projFds = readProjectedFdsFromWrapper(w);
-            perTableFdsArrays.push(projFds || []);
+            try { cols = JSON.parse(w.dataset.columns || '[]'); } catch { cols = []; }
+            const projFds = readProjectedFdsFromWrapper(w) || [];
+            perTableFdsArrays.push(projFds);
             if (!cols || cols.length === 0) {
                 const { manualData: manualDataFallback } = buildManualDataForWrapper(w);
-                tablesPayload.push({ columns: [], manualData: manualDataFallback, fds: (projFds || []).join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
+                tablesPayload.push({
+                    columns: [],
+                    manualData: manualDataFallback,
+                    fds: projFds.join(';'),
+                    timeLimit: parseInt(timeLimitInput?.value || '30', 10),
+                    monteCarlo: globalMonteCarloFlag,
+                    samples: globalMonteCarloFlag ? globalSamplesVal : 0
+                });
                 continue;
             }
             const { manualData, baseColumns } = buildManualDataForWrapper(w);
             if (Array.isArray(baseColumns) && baseColumns.length > 0) {
-                try { w.dataset.baseColumns = JSON.stringify(baseColumns); } catch (err) {}
+                try { w.dataset.baseColumns = JSON.stringify(baseColumns); } catch {}
             }
-            tablesPayload.push({ columns: cols, manualData: manualData, baseColumns: baseColumns, fds: (projFds || []).join(';'), timeLimit: parseInt(timeLimitInput?.value || '30',10), monteCarlo:false, samples:0 });
+            tablesPayload.push({
+                columns: cols,
+                manualData,
+                baseColumns,
+                fds: projFds.join(';'),
+                timeLimit: parseInt(timeLimitInput?.value || '30', 10),
+                monteCarlo: globalMonteCarloFlag,
+                samples: globalMonteCarloFlag ? globalSamplesVal : 0
+            });
         }
 
         let topLevelFdsArr = [];
@@ -1301,38 +1634,197 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (window.fdList && String(window.fdList).trim()) {
                 topLevelFdsArr = parseProjectedFdsValue(window.fdList);
             }
-        } catch (e) { topLevelFdsArr = []; }
+        } catch {
+            topLevelFdsArr = [];
+        }
         if (topLevelFdsArr.length === 0) topLevelFdsArr = uniqConcat(perTableFdsArrays);
+
         const bodyObj = { tables: tablesPayload, fds: topLevelFdsArr.join(';') };
         if (Array.isArray(scopedBaseColumns) && scopedBaseColumns.length > 0) {
             bodyObj.baseColumns = scopedBaseColumns.map(Number);
         }
-        const resp = await fetch('/normalize/decompose-all', {
+
+        const startResp = await fetch('/normalize/decompose-stream/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bodyObj)
         });
-        if (!resp.ok) {
-            const txt = await resp.text();
+        if (!startResp.ok) {
+            const txt = await startResp.text();
             Swal.fire({
                 icon: 'error',
                 title: 'Decomposition Not Accepted',
-                text: 'Decomposition not accepted: ' + (txt || resp.statusText),
+                text: 'Normalization request rejected: ' + (txt || startResp.statusText),
                 confirmButtonText: 'Close'
             });
             return null;
         }
-        const json = await resp.json();
+
+        let token;
+        try {
+            const initJson = await startResp.json();
+            token = initJson?.token ? String(initJson.token) : null;
+        } catch {
+            token = null;
+        }
+        if (!token) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Stream Error',
+                text: 'Normalization stream could not be initialized (missing token).',
+                confirmButtonText: 'Close'
+            });
+            return null;
+        }
+
+        let progressListEl = null;
+        let progressOpen = false;
+        const pendingProgressMessages = [];
+
+        const ensureProgressModal = () => {
+            if (progressOpen) return;
+            progressOpen = true;
+            Swal.fire({
+                icon: 'info',
+                title: 'Normalization in Progress',
+                html: '<div class="normalization-progress"><ul class="progress-log"></ul></div>',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    const container = Swal.getHtmlContainer();
+                    progressListEl = container?.querySelector('.progress-log');
+                    if (!progressListEl) {
+                        progressListEl = document.createElement('ul');
+                        progressListEl.classList.add('progress-log');
+                        container?.appendChild(progressListEl);
+                    }
+                    Swal.showLoading();
+                    if (pendingProgressMessages.length > 0) {
+                        const buffered = pendingProgressMessages.splice(0, pendingProgressMessages.length);
+                        buffered.forEach(({ message, type }) => {
+                            renderProgress(message, type);
+                        });
+                    }
+                }
+            });
+        };
+
+        const renderProgress = (message, type = 'progress') => {
+            if (!progressListEl) return;
+            const li = document.createElement('li');
+            li.textContent = message;
+            if (type === 'error') li.classList.add('progress-error');
+            if (type === 'done') li.classList.add('progress-done');
+            progressListEl.appendChild(li);
+            progressListEl.scrollTop = progressListEl.scrollHeight;
+        };
+
+        const appendProgress = (message, type = 'progress') => {
+            if (!message) return;
+            ensureProgressModal();
+            if (!progressListEl) {
+                pendingProgressMessages.push({ message, type });
+                return;
+            }
+            renderProgress(message, type);
+        };
+
+        const parseSseData = (evt) => {
+            if (!evt || typeof evt.data !== 'string') return {};
+            try { return JSON.parse(evt.data); }
+            catch { return { message: evt.data }; }
+        };
+
+        const result = await new Promise((resolve, reject) => {
+            let streamClosed = false;
+            let awaitingUserConfirm = false;
+            let pendingPayload = null;
+
+            const finalize = (payload, error) => {
+                if (streamClosed && awaitingUserConfirm) {
+                    // kullanıcı onayı beklerken finalize çağrılmışsa akışı tamamla
+                    awaitingUserConfirm = false;
+                }
+                if (progressOpen) {
+                    Swal.close();
+                    progressOpen = false;
+                    progressListEl = null;
+                }
+                if (error) reject(error);
+                else resolve(payload);
+            };
+
+            const source = new EventSource(`/normalize/decompose-stream?token=${encodeURIComponent(token)}`);
+
+            source.addEventListener('progress', (evt) => {
+                const data = parseSseData(evt);
+                appendProgress(data.message || 'Working...');
+            });
+
+            source.addEventListener('stream-error', (evt) => {
+                const data = parseSseData(evt);
+                appendProgress(data.message || 'Stream error.', 'error');
+                source.close();
+                streamClosed = true;
+                finalize(null, new Error(data.message || 'Stream error.'));
+            });
+
+            source.addEventListener('complete', (evt) => {
+                const data = parseSseData(evt);
+                appendProgress('Normalization completed.', 'done');
+                pendingPayload = data?.payload ?? null;
+                awaitingUserConfirm = true;
+
+                source.close();        // SSE bağlantısını hemen kapat
+                streamClosed = true;
+
+                Swal.hideLoading();
+
+                const actions = Swal.getActions();
+                if (actions) {
+                    actions.style.display = 'flex';
+                    actions.style.justifyContent = 'center';
+                }
+
+                const confirmBtn = Swal.getConfirmButton();
+                const handleConfirm = () => {
+                    confirmBtn.removeEventListener('click', handleConfirm);
+                    awaitingUserConfirm = false;
+                    finalize(pendingPayload, null);
+                };
+                if (confirmBtn) {
+                    confirmBtn.style.display = 'inline-block';
+                    confirmBtn.textContent = 'Continue';
+                    confirmBtn.disabled = false;
+                    confirmBtn.addEventListener('click', handleConfirm);
+                }
+                else {
+                    awaitingUserConfirm = false;
+                    finalize(pendingPayload, null);
+                }
+            });
+
+            source.onerror = () => {
+                if (streamClosed || awaitingUserConfirm) return;
+                appendProgress('Connection lost.', 'error');
+                source.close();
+                streamClosed = true;
+                finalize(null, new Error('Normalization stream connection failed.'));
+            };
+        });
+
+        if (!result) return null;
         if (relationGroup) {
             lastScopedComputation = {
                 group: relationGroup,
-                response: json,
+                response: result,
                 timestamp: Date.now()
             };
         } else {
-            window._lastDecomposeResult = json;
+            window._lastDecomposeResult = result;
         }
-        return json;
+        return result;
     }
 
     async function computeAllRic(autoTriggered = false, overrideWrappers = null, scopedBaseColumns = null, relationGroup = null) {
@@ -1485,10 +1977,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Add decomposed table handler
     if (!addTableBtn) {
         console.warn('Add Table button not found (id="addTable")');
-        return;
     }
 
     // Helper function to create a new decomposed table (opts supported)
@@ -1496,8 +1986,11 @@ document.addEventListener('DOMContentLoaded', () => {
     //   initialColumns: array of numbers
     //   initialManualData: "a,b,c;d,e,f"
     //   initialFds: string
+    //   initialRicMatrix: array | string (JSON)
     function createDecomposedTable(opts = {}) {
         const origMode = !!opts.origMode;
+        const parentContainer = opts.parentContainer instanceof HTMLElement ? opts.parentContainer : null;
+        const autoAppend = opts.autoAppend !== false;
         const initialCols = Array.isArray(opts.initialColumns) ? opts.initialColumns.map(n => Number(n)) : null;
 
         let rawManualData = opts.initialManualData;
@@ -1507,6 +2000,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const initialManualData = (typeof rawManualData === 'string') ? rawManualData : null;
         const initialFds = (typeof opts.initialFds === 'string') ? opts.initialFds : null;
+        let initialRicMatrix = null;
+        if (Array.isArray(opts.initialRicMatrix)) {
+            initialRicMatrix = opts.initialRicMatrix;
+        } else if (typeof opts.initialRicMatrix === 'string' && opts.initialRicMatrix.trim()) {
+            try {
+                const parsedRic = JSON.parse(opts.initialRicMatrix.trim());
+                if (Array.isArray(parsedRic)) initialRicMatrix = parsedRic;
+            } catch (err) {
+                initialRicMatrix = null;
+            }
+        }
+
+        let decomposedCols = [];
+
+        console.log('createDecomposedTable: start', {
+            origMode,
+            autoAppend,
+            parentContainer,
+            initialCols,
+            initialManualData,
+            initialFds,
+            initialRicMatrix
+        });
 
         let newDecomposedNumber = 1;
         if (!origMode) {
@@ -1523,7 +2039,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const wrapper = document.createElement('div');
         wrapper.classList.add('decomposed-wrapper');
-        if (origMode) wrapper.classList.add('orig-as-original');
+        if (origMode) {
+            wrapper.classList.add('orig-as-original', 'relation-original-wrapper');
+            wrapper.dataset.relationBase = 'true';
+        } else {
+            wrapper.dataset.relationBase = 'false';
+        }
 
         // Title
         const title = document.createElement('h3');
@@ -1596,7 +2117,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!origMode) wrapper.appendChild(removeBtn);
 
         // Append wrapper to container
-        decContainer.appendChild(wrapper);
+        if (autoAppend) {
+            if (parentContainer) {
+                parentContainer.appendChild(wrapper);
+            } else if (decContainer && decContainer.style.display !== 'none') {
+                decContainer.appendChild(wrapper);
+            } else if (relationsContainer && relationsContainer.style.display !== 'none') {
+                relationsContainer.appendChild(wrapper);
+            }
+        }
+
+        console.log('createDecomposedTable: appended', {
+            parentContainerUsed: parentContainer || (decContainer && decContainer.style.display !== 'none' ? decContainer : relationsContainer),
+            wrapper,
+            wrapperParent: wrapper.parentElement
+        });
 
         // Dataset placeholders
         wrapper.dataset.columns = JSON.stringify([]);
@@ -1609,9 +2144,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (initialCols) {
             try { wrapper.dataset.baseColumns = JSON.stringify(initialCols); } catch (err) {}
         }
+        if (initialRicMatrix) {
+            try { wrapper.dataset.ricMatrix = JSON.stringify(initialRicMatrix); } catch (err) {}
+        }
 
-        // Per-table state
-        let decomposedCols = [];
+        console.log('createDecomposedTable: end', {
+            dataset: {
+                restoredManualData: wrapper.dataset.restoredManualData,
+                baseColumns: wrapper.dataset.baseColumns,
+                ricMatrix: wrapper.dataset.ricMatrix
+            }
+        });
+
+        console.log('createDecomposedTable: restore rendering', {
+            wrapper,
+            decomposedCols,
+            dataset: Object.assign({}, wrapper.dataset)
+        });
 
         // External updater
         wrapper.updateFromColumns = function(newCols) {
@@ -1628,9 +2177,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!origMode) {
                     th.innerHTML = `
-                    <span>${colNum}</span>
-                    <button type="button" class="delete-col-btn" title="Remove column ${colNum}" data-orig-idx="${idx}">×</button>
-                `;
+                        <span>${colNum}</span>
+                        <button type="button" class="delete-col-btn" title="Remove column ${colNum}" data-orig-idx="${idx}">×</button>
+                    `;
                 } else {
                     th.innerHTML = `<span>${colNum}</span>`;
                 }
@@ -1875,23 +2424,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (initialCols && initialCols.length > 0 && initialManualData && initialManualData.trim()) {
                     try {
                         let manualDataToSplit = initialManualData;
-                        if (Array.isArray(initialManualData)) {
-                            manualDataToSplit = initialManualData.join(';');
-                        } else if (typeof initialManualData === 'string') {
+                        if (typeof initialManualData === 'string') {
                             manualDataToSplit = initialManualData.trim();
+                        } else if (Array.isArray(initialManualData)) {
+                            manualDataToSplit = normalizeManualEntry(initialManualData);
                         } else {
                             manualDataToSplit = '';
                         }
 
-                        const rows = initialManualData.split(';').map(r => r.split(',').map(c => (c == null ? '' : String(c).trim())));
+                        const rows = manualDataToSplit.length > 0
+                            ? manualDataToSplit.split(';').map(r => r.split(',').map(c => (c == null ? '' : String(c).trim())))
+                            : [];
                         tbody.innerHTML = '';
 
                         // Safely parse the RIC matrix and column mapping information from the PageController
-                        let globalRic = [];
-                        let unionCols = [];
+                        let tableRic = [];
+                        if (wrapper.dataset.ricMatrix) {
+                            try {
+                                const parsed = JSON.parse(wrapper.dataset.ricMatrix);
+                                if (Array.isArray(parsed)) tableRic = parsed;
+                            } catch (err) {
+                                tableRic = [];
+                            }
+                        }
 
-                        try { globalRic = JSON.parse(window.currentGlobalRic || '[]'); } catch (e) { globalRic = []; console.warn("Global RIC parse failed:", e); }
-                        try { unionCols = JSON.parse(window.currentUnionCols || '[]'); } catch (e) { unionCols = []; console.warn("Union Cols parse failed:", e); }
+                        if (tableRic.length === 0 && Array.isArray(initialRicMatrix) && initialRicMatrix.length > 0) {
+                            tableRic = initialRicMatrix;
+                        }
 
                         for (let r = 0; r < rows.length; r++) {
                             const rArr = rows[r];
@@ -1903,20 +2462,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 td.textContent = (rArr[cIdx] !== undefined ? rArr[cIdx] : '');
                                 td.dataset.origIdx = origColIdx;
 
-                                // Apply ric coloring
                                 let ricVal = NaN;
-
-                                // Find the column index in the globalRic matrix
-                                const globalRicColIndex = (unionCols && Array.isArray(unionCols)) ? unionCols.indexOf(origColIdx) : -1;
-
-                                // get RIC value: globalRic[row][global_column_index]
-                                if (globalRicColIndex !== -1 && Array.isArray(globalRic[r])) {
-                                    const v = globalRic[r][globalRicColIndex];
+                                if (Array.isArray(tableRic) && Array.isArray(tableRic[r])) {
+                                    const v = tableRic[r][cIdx];
                                     const parsed = parseFloat(v);
                                     if (!isNaN(parsed)) ricVal = parsed;
                                 }
 
-                                if (!isNaN(ricVal) && ricVal < 1) {
+                				if (!isNaN(ricVal) && ricVal < 1) {
                                     td.classList.add('plaque-cell');
                                     const lightness = 10 + 90 * ricVal;
                                     td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
@@ -1958,70 +2511,31 @@ document.addEventListener('DOMContentLoaded', () => {
             footer.style.paddingTop = '10px';
             footer.style.borderTop = '1px solid #ddd';
 
-            // +Add Decomposed Table button
             const addTableLocalBtn = document.createElement('button');
             addTableLocalBtn.classList.add('button', 'pill', 'add-decomp-local-btn');
             addTableLocalBtn.textContent = '+ Add Decomposed Table';
             addTableLocalBtn.style.marginRight = '5px';
-            // Click logic, create the new table and insert it immediately after the existing table
             addTableLocalBtn.addEventListener('click', () => {
-
                 const relationGroup = wrapper.closest('.relation-group');
-                if (!relationGroup) {
-                    console.error('Relation group not found. Structural error.');
-                    return;
-                }
-
-                // Local Container is .local-decomposition-group in relationGroup
+                if (!relationGroup) return;
                 const localContainer = relationGroup.querySelector('.local-decomposition-group');
-                if (!localContainer) {
-                    console.error('Parsing group not found.');
-                    return;
-                }
-
-                // Count only tables in this container
-                const existingChildren = localContainer.querySelectorAll('.decomposed-wrapper');
-                const newLocalNumber = existingChildren.length + 1;
-
-                // Create new table
-                const newWrapper = createDecomposedTable({ origMode: false });
-                if (wrapper.dataset.baseColumns) {
-                    newWrapper.dataset.baseColumns = wrapper.dataset.baseColumns;
-                }
-
-                // Assigning local number
-                const newTitleElement = newWrapper.querySelector('h3');
-                if(newTitleElement) {
-                    newTitleElement.textContent = `Decomposed Table ${newLocalNumber}:`;
-                }
-
-                // Add the new table to the end of the local group container (All T# tables will flow side by side)
-                localContainer.appendChild(newWrapper);
+                if (!localContainer) return;
+                const newWrapper = createDecomposedTable({ origMode: false, parentContainer: localContainer });
+                if (wrapper.dataset.baseColumns) newWrapper.dataset.baseColumns = wrapper.dataset.baseColumns;
+                const existing = localContainer.querySelectorAll('.decomposed-wrapper');
+                const titleEl = newWrapper.querySelector('h3');
+                if (titleEl) titleEl.textContent = `Decomposed Table ${existing.length}:`;
             });
             footer.appendChild(addTableLocalBtn);
 
-            // Check Decomposition button
             const checkDecompLocalBtn = document.createElement('button');
             checkDecompLocalBtn.type = 'button';
             checkDecompLocalBtn.classList.add('button', 'pill', 'check-decomp-local-btn');
             checkDecompLocalBtn.textContent = 'Decomposition Finished';
-
             checkDecompLocalBtn.addEventListener('click', async () => {
-                try {
-                    const relationGroup = wrapper.closest('.relation-group');
-                    if (!relationGroup) {
-                        throw new Error('Internal error: relationGroup not found for this relation.');
-                    }
-                    await handleRelationDecompositionCheck(relationGroup, wrapper, checkDecompLocalBtn);
-                } catch (err) {
-                    console.error('Decomposition check failed', err);
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Check Failed',
-                        text: err && err.message ? err.message : String(err),
-                        confirmButtonText: 'Close'
-                    });
-                }
+                const relationGroup = wrapper.closest('.relation-group');
+                if (!relationGroup) return;
+                await handleRelationDecompositionCheck(relationGroup, wrapper, checkDecompLocalBtn);
             });
             footer.appendChild(checkDecompLocalBtn);
 
@@ -2033,9 +2547,7 @@ document.addEventListener('DOMContentLoaded', () => {
             changeLocalBtn.style.display = 'none';
             changeLocalBtn.addEventListener('click', async () => {
                 const relationGroup = wrapper.closest('.relation-group');
-                if (!relationGroup) {
-                    return;
-                }
+                if (!relationGroup) return;
                 const confirm = await Swal.fire({
                     title: 'Confirm Change',
                     text: 'Are you sure you want to change the decomposition? All calculation results will be reset.',
@@ -2162,6 +2674,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const lastResult = window._lastDecomposeResult || {};
 
+        const originalTableString = originalRows.length
+            ? originalRows.map(row => row.join(',')).join(';')
+            : '';
+
+        const globalRicMatrix = Array.isArray(lastResult.globalRic) && lastResult.globalRic.length
+            ? lastResult.globalRic
+            : ricMatrix;
+
+        const unionColumnMapping = Array.isArray(lastResult.unionCols) && lastResult.unionCols.length
+            ? lastResult.unionCols
+            : (originalRows[0] ? originalRows[0].map((_, idx) => idx) : []);
+
         return {
             tablesData,
             payload: {
@@ -2170,25 +2694,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 fdsPerTable: tablesData.map(t => t.localFds.join(';')),
                 fdsPerTableOriginal: tablesData.map(t => t.originalFds.join(';')),
                 ricPerTable: tablesData.map(t => t.ricMatrix),
-                globalRic: lastResult.globalRic || [],
-                unionCols: lastResult.unionCols || []
+                globalRic: globalRicMatrix,
+                unionCols: unionColumnMapping,
+                originalTable: originalTableString,
+                originalRic: Array.isArray(ricMatrix) ? ricMatrix : []
             }
         };
     }
 
     async function handleContinueNormalization() {
-        const result = await Swal.fire({
-            title: 'Confirm Proceed',
-            text: 'Proceed to the next stage with this decomposition?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#3b82f6',
-            cancelButtonColor: '#d33',
-            confirmButtonText: 'Yes, Proceed'
-        });
-
-        if (!result.isConfirmed) return;
-
         const state = collectDecompositionState();
         if (!state) {
             Swal.fire({
@@ -2227,22 +2741,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleShowBcnfTables() {
         const state = collectDecompositionState();
+        let payload;
         if (!state) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'No Decomposed Tables',
-                text: 'There are no decomposed tables to display.',
-                confirmButtonText: 'Close'
-            });
-            return;
+            if (alreadyBcnf && window._alreadyBcnfPayload) {
+                payload = { ...window._alreadyBcnfPayload };
+            } else {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Decomposed Tables',
+                    text: 'There are no decomposed tables to display.',
+                    confirmButtonText: 'Close'
+                });
+                return;
+            }
+        } else {
+            payload = { ...state.payload };
         }
 
         const bcnfMeta = window._lastBcnfMeta || { attempts: 0, elapsed: 0 };
-        const payload = {
-            ...state.payload,
-            attempts: bcnfMeta.attempts || 0,
-            elapsedTime: bcnfMeta.elapsed || 0
-        };
+        payload.attempts = bcnfMeta.attempts || 0;
+        payload.elapsedTime = bcnfMeta.elapsed || 0;
 
         try {
             const res = await fetch('/normalize/bcnf-review', {

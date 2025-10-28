@@ -241,6 +241,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const monteCarloCheckbox = document.getElementById('mcCheckbox');
     const samples = document.getElementById('samples');
     if (monteCarloCheckbox && samples) {
+        const params = new URLSearchParams(window.location.search);
+        const restoredMonteCarlo = params.get('monteCarlo');
+        const restoredSamples = params.get('samples');
+        if (restoredMonteCarlo !== null) {
+            const shouldCheck = restoredMonteCarlo === 'true' || restoredMonteCarlo === 'on' || restoredMonteCarlo === '1';
+            monteCarloCheckbox.checked = shouldCheck;
+            samples.disabled = !shouldCheck;
+        }
+        if (restoredSamples !== null && restoredSamples !== '') {
+            samples.value = restoredSamples;
+        } else {
+            samples.value = '100000';
+        }
         monteCarloCheckbox.addEventListener('change', () => {
             samples.disabled = !monteCarloCheckbox.checked;
         });
@@ -249,6 +262,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Collecting data with using form submit
     const form = document.getElementById('calcForm');
     if (!form) return console.error("Form could not be found.");
+
+    const computeBtn = document.getElementById('computeBtn');
+
     form.addEventListener('submit', e => {
         // Collecting CSV file or manual data
         let manualContent = '';
@@ -304,18 +320,151 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Only FDs are missing
-        if (isFdsMissing) {
+        startLiveComputation({
+            manualData: finalDataString,
+            fds: finalFdsString,
+            monteCarloSelected: !!(document.getElementById('mcCheckbox')?.checked),
+            samples: document.getElementById('samples')?.value || '100000'
+        });
+    });
+
+    function startLiveComputation({ manualData, fds, monteCarloSelected, samples }) {
+        if (computeBtn) computeBtn.disabled = true;
+
+        let swalInstance;
+        const progressItems = [];
+        let lastProgressAt = performance.now();
+        const streamStartedAt = performance.now();
+        const MIN_PROGRESS_MS = 1200;
+        const MIN_AFTER_LAST_PROGRESS_MS = 600;
+
+        const renderModal = (title, htmlContent) => {
+            const result = Swal.fire({
+                title,
+                html: htmlContent,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.getHtmlContainer().querySelector('.live-status-log')?.scrollTo({ top: 999999, behavior: 'smooth' });
+                }
+            });
+            swalInstance = result;
+        };
+
+        const updateModal = () => {
+            const listItems = progressItems.map(item => `<li>${item}</li>`).join('');
+            const html = `
+                <div class="live-status-wrapper">
+                    <div class="live-status-spinner"></div>
+                    <div class="live-status-content">
+                        <p class="live-status-note">Calculation is running. After the calculations are completed, results page can be directed.</p>
+                        <ul class="live-status-log">${listItems}</ul>
+                    </div>
+                </div>
+            `;
+            if (!Swal.isVisible()) {
+                renderModal('Computation Status', html);
+            } else {
+                Swal.update({ html });
+                Swal.getHtmlContainer().querySelector('.live-status-log')?.scrollTo({ top: 999999, behavior: 'smooth' });
+            }
+        };
+
+        const params = new URLSearchParams();
+        params.set('manualData', manualData);
+        if (fds) params.set('fds', fds);
+        params.set('monteCarlo', monteCarloSelected ? 'true' : 'false');
+        params.set('samples', samples || '100000');
+
+        const source = new EventSource(`/compute/stream?${params.toString()}`);
+
+        const appendStatus = (message) => {
+            if (!message) return;
+            progressItems.push(message);
+            lastProgressAt = performance.now();
+            updateModal();
+        };
+
+        const showCompletion = (redirectUrl) => {
+            const elapsed = performance.now() - streamStartedAt;
+            const sinceLastProgress = performance.now() - lastProgressAt;
+            const basicWait = Math.max(MIN_PROGRESS_MS - elapsed, 0);
+            const afterProgressWait = Math.max(MIN_AFTER_LAST_PROGRESS_MS - sinceLastProgress, 0);
+            const waitMs = Math.max(basicWait, afterProgressWait);
+            setTimeout(() => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Computation Finished',
+                    text: 'Click the button to be directed to the results page.',
+                    confirmButtonText: 'Show Results',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false
+                }).then(() => {
+                    window.location.href = redirectUrl;
+                });
+            }, waitMs);
+        };
+
+        source.addEventListener('progress', event => {
+            try {
+                const payload = JSON.parse(event.data);
+                appendStatus(payload.message);
+            } catch (err) {
+                appendStatus(event.data);
+            }
+        });
+
+        source.addEventListener('complete', event => {
+            source.close();
+            if (computeBtn) computeBtn.disabled = false;
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (err) {
+                data = {};
+            }
+            const redirectUrl = data && data.redirectUrl ? data.redirectUrl : '/calc-results';
+            showCompletion(redirectUrl);
+        });
+
+        source.addEventListener('error', event => {
+            let message = 'Unexpected error during computation.';
+            try {
+                const payload = JSON.parse(event.data);
+                if (payload && payload.message) message = payload.message;
+            } catch (err) {
+                if (event.data) message = event.data;
+            }
+            if (Swal.isVisible()) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Computation failed',
+                    text: message,
+                    confirmButtonText: 'Close'
+                });
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Computation failed',
+                    text: message,
+                    confirmButtonText: 'Close'
+                });
+            }
+            if (computeBtn) computeBtn.disabled = false;
+            source.close();
+        });
+
+        source.onerror = () => {
             Swal.fire({
-                icon: 'warning',
-                title: 'Functional Dependencies Missing',
-                text: 'Please enter any functional dependencies.',
+                icon: 'error',
+                title: 'Connection lost',
+                text: 'Connection lost while receiving computation updates.',
                 confirmButtonText: 'Close'
             });
-            return;
-        }
-
-        // If everything is valid, manually submit the form
-        form.submit();
-    });
+            if (computeBtn) computeBtn.disabled = false;
+            source.close();
+        };
+    }
 });
+

@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Service;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Service
@@ -27,17 +28,69 @@ public class DecomposeService {
 	}
 
 	public DecomposeResponse decompose(DecomposeRequest req, HttpSession session) {
-		System.out.println("DecomposeService.decompose: start");
+		return decomposeWithProgress(req, session, null, null);
+	}
 
-		// OriginalFDs list
+	public DecomposeResponse decomposeWithProgress(DecomposeRequest req,
+			HttpSession session,
+			Consumer<String> progressListener,
+			String tableLabel) {
+		System.out.println("DecomposeService.decomposeWithProgress: start");
+
 		List<FD> originalFDs = getOriginalFDsOrThrow(session);
-		System.out.println("DecomposeService: originalFDs = " + originalFDs);
-
-		// OriginalAttrOrder
 		List<String> originalAttrOrder = getOriginalAttrOrder(session);
+		System.out.println("DecomposeService: originalFDs = " + originalFDs);
 		System.out.println("DecomposeService: originalAttrOrder = " + originalAttrOrder);
 
-		// Mapping incoming column indices to attribute names
+		List<Integer> baseColumns = req.getBaseColumns() == null
+				? Collections.emptyList()
+				: req.getBaseColumns();
+		System.out.println("req baseColumns = " + (baseColumns.isEmpty() ? "<empty>" : baseColumns));
+
+		List<String> scopedAttrOrder;
+		List<FD> scopedOriginalFds;
+		Set<String> scopedOriginalAttrs;
+
+		if (!baseColumns.isEmpty()) {
+			List<Integer> normalized = baseColumns.stream()
+					.filter(Objects::nonNull)
+					.map(Number::intValue)
+					.filter(idx -> idx >= 0 && idx < originalAttrOrder.size())
+					.distinct()
+					.sorted()
+					.collect(Collectors.toList());
+
+			if (normalized.isEmpty()) {
+				throw new IllegalArgumentException("baseColumns contained no valid indices");
+			}
+
+			scopedAttrOrder = normalized.stream()
+					.map(originalAttrOrder::get)
+					.collect(Collectors.toCollection(ArrayList::new));
+			scopedOriginalAttrs = new LinkedHashSet<>(scopedAttrOrder);
+
+			List<FD> allFds = new ArrayList<>(originalFDs);
+			Set<FD> transitive = new LinkedHashSet<>(fdService.findTransitiveFDs(originalFDs));
+			allFds.addAll(transitive);
+			scopedOriginalFds = allFds.stream()
+					.filter(fd -> scopedOriginalAttrs.containsAll(fd.getLhs()) && scopedOriginalAttrs.containsAll(fd.getRhs()))
+					.map(fd -> new FD(new LinkedHashSet<>(fd.getLhs()), new LinkedHashSet<>(fd.getRhs())))
+					.collect(Collectors.toCollection(ArrayList::new));
+		} else {
+			scopedAttrOrder = new ArrayList<>(originalAttrOrder);
+			scopedOriginalFds = new ArrayList<>(originalFDs);
+			@SuppressWarnings("unchecked")
+			Set<String> originalAttrs = (Set<String>) session.getAttribute("originalAttrs");
+			if (originalAttrs == null) {
+				originalAttrs = new LinkedHashSet<>(originalAttrOrder);
+				session.setAttribute("originalAttrs", originalAttrs);
+			}
+			scopedOriginalAttrs = new LinkedHashSet<>(originalAttrs);
+		}
+
+		System.out.println("DecomposeService: scoped originalAttrOrder = " + scopedAttrOrder);
+		System.out.println("DecomposeService: scoped originalFDs = " + scopedOriginalFds);
+
 		List<Integer> cols = req.getColumns() == null ? Collections.emptyList() : req.getColumns();
 		Set<String> attrs = cols.stream()
 				.map(i -> {
@@ -46,65 +99,82 @@ public class DecomposeService {
 					}
 					return originalAttrOrder.get(i);
 				})
-				// Keep insertion order
 				.collect(Collectors.toCollection(LinkedHashSet::new));
 		System.out.println("DecomposeService: projected attrs = " + attrs);
 
-		// Computing projected FDs with closure
-		List<FD> projected = projectFDsByClosure(attrs, originalFDs);
+		List<FD> projected = projectFDsByClosure(attrs, scopedOriginalFds);
 		System.out.println("DecomposeService: projected (pre-minimize) = " + projected);
-
-		// Minimizing LHS for each projected FD
-		projected = minimizeLhsForFds(projected, originalFDs);
+		projected = minimizeLhsForFds(projected, scopedOriginalFds);
 		System.out.println("DecomposeService: projected (minimized) = " + projected);
 
-		// Checking dependency-preserving
-		boolean dpPreserved = checkDependencyPreserving(originalFDs, projected);
+		boolean dpPreserved = checkDependencyPreserving(scopedOriginalFds, projected);
 		System.out.println("DecomposeService: dependency-preserved = " + dpPreserved);
 
-		// Checking lossless-join
-		Set<String> originalAttrs = (Set<String>) session.getAttribute("originalAttrs");
-		if (originalAttrs == null) {
-			originalAttrs = new LinkedHashSet<>(originalAttrOrder);
-			session.setAttribute("originalAttrs", originalAttrs);
+		Set<String> originalAttrs;
+		if (!baseColumns.isEmpty()) {
+			originalAttrs = new LinkedHashSet<>(scopedOriginalAttrs);
+		} else {
+			@SuppressWarnings("unchecked")
+			Set<String> sessionOriginalAttrs = (Set<String>) session.getAttribute("originalAttrs");
+			if (sessionOriginalAttrs == null) {
+				sessionOriginalAttrs = new LinkedHashSet<>(originalAttrOrder);
+				session.setAttribute("originalAttrs", sessionOriginalAttrs);
+			}
+			originalAttrs = new LinkedHashSet<>(sessionOriginalAttrs);
 		}
-		// Build complement (R \ S) to create a 2-way decomposition
 		Set<String> S = new LinkedHashSet<>(attrs);
 		Set<String> complement = new LinkedHashSet<>(originalAttrs);
 		complement.removeAll(S);
 		List<Set<String>> schemas = new ArrayList<>();
 		schemas.add(S);
 		schemas.add(complement);
-		boolean ljPreserved = checkLosslessDecomposition(originalAttrs, schemas, originalFDs);
+		boolean ljPreserved = checkLosslessDecomposition(originalAttrs, schemas, scopedOriginalFds);
 		System.out.println("DecomposeService: lossless-join = " + ljPreserved);
 
-		// Calculating relational information content
-		double[][] ric;
-		if (req.getManualData() != null && !req.getManualData().isBlank()) {
-			System.out.println("DecomposeService: using manualData from request for RIC");
-			// Use request FDs if provided (normalize arrows and whitespace)
-			String reqFds = req.getFds() == null ? "" : req.getFds();
-			reqFds = reqFds.replace("\u2192", "->").replace("→", "->")
-					.replaceAll("\\s*,\\s*", ",").replaceAll("\\s*->\\s*", "->")
-					.replaceAll("-+>", "->").trim();
-			if (reqFds.isEmpty()) {
-				ric = ricService.computeRicFromManualData(req.getManualData());
-			} else {
-				ric = ricService.computeRicFromManualData(req.getManualData(), reqFds);
-			}
-		} else {
-			System.out.println("DecomposeService: using session + columns for RIC");
-			ric = ricService.computeRic(cols, session);
+		boolean manualProvided = req.getManualData() != null && !req.getManualData().isBlank();
+		String manualDataPayload = manualProvided
+				? sanitizeManualDataString(req.getManualData())
+				: buildManualDataForColumns(cols, session);
+		if (manualDataPayload == null) manualDataPayload = "";
+		manualDataPayload = manualDataPayload.trim();
+		if (manualDataPayload.isEmpty()) {
+			throw new IllegalStateException("No manual data available for RIC computation.");
 		}
+		System.out.println("DecomposeService: manualData length = " + manualDataPayload.length());
 
-		// FD strings
+		String normalizedFds = normalizeFds(req.getFds());
+
+		List<String> collectedSteps = new ArrayList<>();
+		Consumer<String> internalCallback = message -> {
+			if (message == null || message.isBlank()) return;
+			String trimmed = message.trim();
+			collectedSteps.add(trimmed);
+			if (progressListener != null) {
+				progressListener.accept(prefixStep(trimmed, tableLabel));
+			}
+		};
+
+		RicService.RicComputationResult ricResult = ricService.computeRicAdaptive(
+				manualDataPayload,
+				normalizedFds,
+				req.isMonteCarlo(),
+				req.getSamples(),
+				internalCallback
+		);
+
+		List<String> sourceSteps = ricResult.steps() != null ? ricResult.steps() : collectedSteps;
+		List<String> prefixedSteps = sourceSteps.stream()
+				.map(step -> prefixStep(step, tableLabel))
+				.collect(Collectors.toList());
+
+		double[][] ricMatrix = ricResult.matrix();
+
 		List<String> fdsStr = projected.stream()
 				.map(this::fdToString)
 				.collect(Collectors.toList());
 
-		// Response
-		DecomposeResponse resp = new DecomposeResponse(ric, fdsStr);
-		System.out.println("DecomposeService.decompose: done -> " + resp);
+		DecomposeResponse resp = new DecomposeResponse(ricMatrix, fdsStr, prefixedSteps);
+		System.out.println("DecomposeService.decomposeWithProgress: done -> " + resp);
 		return resp;
 	}
 
@@ -266,9 +336,21 @@ public class DecomposeService {
 		System.out.println("DecomposeService.decomposeAll: built manualData for global RIC = " + builtManual);
 		System.out.println("DecomposeService.decomposeAll: passing topFds = '" + topFds + "' to RicService");
 
-		// Compute global RIC, passing top-level fds if any
-		double[][] globalRic = ricService.computeRicFromManualData(builtManual, topFds);
-		if (globalRic == null) globalRic = new double[0][0];
+		// Compute global RIC with adaptive fallbacks, passing top-level FDs
+		List<String> globalRicSteps = new ArrayList<>();
+		RicService.RicComputationResult globalRicResult = ricService.computeRicAdaptive(
+				builtManual,
+				topFds,
+				req.isMonteCarlo(),
+				req.getSamples(),
+				message -> {
+					if (message != null && !message.isBlank()) {
+						globalRicSteps.add(message.trim());
+					}
+				});
+		double[][] globalRic = globalRicResult != null && globalRicResult.matrix() != null
+				? globalRicResult.matrix()
+				: new double[0][0];
 
 		// Per-table: project & minimize FDs (still return projected FD lists per table)
 		List<DecomposeResponse> perTableResponses = new ArrayList<>();
@@ -352,6 +434,80 @@ public class DecomposeService {
 		}
 		List<?> raw = (List<?>) obj;
 		return raw.stream().map(Object::toString).collect(Collectors.toList());
+	}
+
+	private String sanitizeManualDataString(String manualData) {
+		if (manualData == null) {
+			return "";
+		}
+		return Arrays.stream(manualData.split(";"))
+				.map(String::trim)
+				.filter(row -> !row.replace(",", "").trim().isEmpty())
+				.collect(Collectors.joining(";"));
+	}
+
+	private String normalizeFds(String fds) {
+		if (fds == null || fds.isBlank()) {
+			return "";
+		}
+		return Arrays.stream(fds.split("[;\r\n]+"))
+				.map(s -> s.replace("→", "->").replace("\u2192", "->"))
+				.map(s -> s.replaceAll("\\s*,\\s*", ","))
+				.map(s -> s.replaceAll("\\s*->\\s*", "->"))
+				.map(String::trim)
+				.filter(s -> !s.isEmpty())
+				.collect(Collectors.joining(";"));
+	}
+
+	private String prefixStep(String step, String tableLabel) {
+		if (step == null || step.isBlank()) {
+			return step;
+		}
+		if (tableLabel == null || tableLabel.isBlank()) {
+			return step;
+		}
+		return tableLabel + ": " + step;
+	}
+
+	private String buildManualDataForColumns(List<Integer> columns, HttpSession session) {
+		if (columns == null || columns.isEmpty()) {
+			return "";
+		}
+		@SuppressWarnings("unchecked")
+		List<List<String>> originalTuples = (List<List<String>>) session.getAttribute("originalTuples");
+		if (originalTuples == null || originalTuples.isEmpty()) {
+			String origJson = (String) session.getAttribute("originalTableJson");
+			if (origJson != null && !origJson.isBlank()) {
+				try {
+					Type t = new TypeToken<List<List<String>>>(){}.getType();
+					originalTuples = gson.fromJson(origJson, t);
+					if (originalTuples == null) originalTuples = Collections.emptyList();
+				} catch (Exception ex) {
+					originalTuples = Collections.emptyList();
+				}
+			}
+		}
+		if (originalTuples == null) {
+			originalTuples = Collections.emptyList();
+		}
+		List<Integer> normalizedCols = columns.stream()
+				.filter(Objects::nonNull)
+				.map(Number::intValue)
+				.filter(idx -> idx >= 0)
+				.collect(Collectors.toList());
+		List<String> rows = new ArrayList<>();
+		for (List<String> tuple : originalTuples) {
+			List<String> picked = new ArrayList<>();
+			for (Integer idx : normalizedCols) {
+				String cell = (idx != null && idx < tuple.size()) ? tuple.get(idx) : "";
+				picked.add(cell == null ? "" : cell.trim());
+			}
+			String joined = String.join(",", picked);
+			if (!joined.isBlank()) {
+				rows.add(joined);
+			}
+		}
+		return String.join(";", rows);
 	}
 
 	// Numbering all non-empty subsets X of attrs and compute closure(X) under originalFDs

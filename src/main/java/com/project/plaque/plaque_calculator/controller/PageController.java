@@ -21,6 +21,7 @@ public class PageController {
 	private final FDService fdService;
 	private final Gson gson = new Gson();
 	private static final String RESTORE_SESSION_KEY = "normalizationRestoreState";
+	private static final String RESET_SESSION_KEY = "normalizationReset";
 
 	public PageController(NormalizationController normalizationController, FDService fdService) {
 		this.normalizationController = normalizationController;
@@ -42,6 +43,8 @@ public class PageController {
 	public String getCalcPage(
 			@RequestParam(value = "inputData", required = false) String inputData,
 			@RequestParam(value = "fdList", required = false) String fdList,
+			@RequestParam(value = "monteCarlo", required = false) String monteCarlo,
+			@RequestParam(value = "samples", required = false) String samples,
 			Model model) {
 
 		// If it comes from the results page and has data/FD information, add it to the model
@@ -52,21 +55,52 @@ public class PageController {
 			model.addAttribute("restoredFdList", fdList);
 		}
 
+		if (monteCarlo != null) {
+			model.addAttribute("restoredMonteCarlo", monteCarlo);
+		}
+		if (samples != null) {
+			model.addAttribute("restoredSamples", samples);
+		}
+
 		return "calc";
 	}
 
-	// Handle Student Logout
-	@GetMapping("/logout")
-	public String studentLogout(HttpSession session) {
+	@GetMapping("/calc-results")
+	public String showCalcResults(HttpSession session, Model model) {
 
-		// Log the student logout action
-		// logService.logActivity("STUDENT_LOGOUT", null, session, null, null);
+		@SuppressWarnings("unchecked")
+		List<String[]> ricMatrix = (List<String[]>) session.getAttribute("calcResultsRicMatrix");
+		Integer ricColCount = (Integer) session.getAttribute("calcResultsRicColCount");
+		String ricJson = (String) session.getAttribute("calcResultsRicJson");
+		String inputData = (String) session.getAttribute("calcResultsInputData");
+		String fdList = (String) session.getAttribute("calcResultsFdList");
+		@SuppressWarnings("unchecked")
+		List<String> ricSteps = (List<String>) session.getAttribute("calcResultsRicSteps");
+		String ricFinalStrategy = (String) session.getAttribute("calcResultsRicFinalStrategy");
+		Boolean monteCarloSelected = (Boolean) session.getAttribute("calcResultsMonteCarloSelected");
+		Integer monteCarloSamples = (Integer) session.getAttribute("calcResultsMonteCarloSamples");
+		@SuppressWarnings("unchecked")
+		List<String> allFdStrings = (List<String>) session.getAttribute("calcResultsAllFdStrings");
+		@SuppressWarnings("unchecked")
+		List<String> transitiveFds = (List<String>) session.getAttribute("calcResultsTransitiveFds");
 
-		// Invalidate the entire session
-		session.invalidate();
+		if (ricMatrix == null || inputData == null) {
+			return "redirect:/calc";
+		}
 
-		// Redirect to the main index page (login screen)
-		return "redirect:/";
+		model.addAttribute("ricMatrix", ricMatrix);
+		model.addAttribute("ricColCount", ricColCount != null ? ricColCount : 0);
+		model.addAttribute("ricJson", ricJson != null ? ricJson : "[]");
+		model.addAttribute("inputData", inputData);
+		model.addAttribute("fdList", fdList != null ? fdList : "");
+		model.addAttribute("ricSteps", ricSteps != null ? ricSteps : List.of());
+		model.addAttribute("ricFinalStrategy", ricFinalStrategy);
+		model.addAttribute("monteCarloSelected", monteCarloSelected != null && monteCarloSelected);
+		model.addAttribute("monteCarloSamples", monteCarloSamples != null ? monteCarloSamples : 100000);
+		model.addAttribute("allFdStringsToShow", allFdStrings != null ? allFdStrings : List.of());
+		model.addAttribute("transitiveFdStrings", transitiveFds != null ? transitiveFds : List.of());
+
+		return "calc-results";
 	}
 
 	/**
@@ -77,9 +111,14 @@ public class PageController {
 	 */
 	@GetMapping("/normalization")
 	public String normalizePage(HttpSession session, Model model) {
+		Boolean resetRequested = (Boolean) session.getAttribute(RESET_SESSION_KEY);
+        boolean initialStatePopulated = false;
 
 		Long startTime = normalizationController.setAndGetNormalizationStartTime(session);
 		model.addAttribute("normalizationStartTimeMs", startTime);
+
+		Boolean alreadyBcnfFlag = (Boolean) session.getAttribute("alreadyBcnf");
+		model.addAttribute("alreadyBcnf", alreadyBcnfFlag != null && alreadyBcnfFlag);
 
 		@SuppressWarnings("unchecked")
 		// Get history list from session
@@ -92,12 +131,19 @@ public class PageController {
 		Map<String, Object> restoreState = (Map<String, Object>) session.getAttribute(RESTORE_SESSION_KEY);
 		Object restoreFlag = session.getAttribute("usingDecomposedAsOriginal");
 		boolean restoreRequested = restoreFlag instanceof Boolean && (Boolean) restoreFlag && restoreState != null;
+		if (Boolean.TRUE.equals(resetRequested)) {
+			populateInitialNormalization(session, model);
+			session.removeAttribute(RESET_SESSION_KEY);
+			initialStatePopulated = true;
+		}
+
 		if (restoreRequested) {
 			System.out.println("[PageController] Using restoreState: " + gson.toJson(restoreState));
 			model.addAttribute("currentRelationsManualJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
 			model.addAttribute("currentRelationsColumnsJson", gson.toJson(restoreState.getOrDefault("columnsPerTable", Collections.emptyList())));
 			model.addAttribute("currentRelationsFdsJson", gson.toJson(restoreState.getOrDefault("fdsPerTable", Collections.emptyList())));
 			model.addAttribute("currentRelationsFdsOriginalJson", gson.toJson(restoreState.getOrDefault("fdsPerTableOriginal", Collections.emptyList())));
+			model.addAttribute("currentRelationsRicJson", gson.toJson(restoreState.getOrDefault("ricPerTable", Collections.emptyList())));
 			model.addAttribute("currentGlobalRicJson", gson.toJson(restoreState.getOrDefault("globalRic", Collections.emptyList())));
 			model.addAttribute("currentUnionColsJson", gson.toJson(restoreState.getOrDefault("unionCols", Collections.emptyList())));
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
@@ -116,25 +162,14 @@ public class PageController {
 			model.addAttribute("currentRelationsColumnsJson", gson.toJson(currentState.get("columnsPerTable")));
 			model.addAttribute("currentRelationsFdsJson", gson.toJson(currentState.get("fdsPerTable")));
 			model.addAttribute("currentRelationsFdsOriginalJson", gson.toJson(currentState.get("fdsPerTableOriginal")));
+			model.addAttribute("currentRelationsRicJson", gson.toJson(currentState.get("ricPerTable")));
 			model.addAttribute("currentGlobalRicJson", gson.toJson(currentState.get("globalRic")));
 			model.addAttribute("currentUnionColsJson", gson.toJson(currentState.get("unionCols")));
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(currentState.get("manualPerTable")));
 			model.addAttribute("initialCalcTableJson", "[]");
 			model.addAttribute("ricJson", "[]");
-		} else {
-			// Step 1
-			String initJson = (String) session.getAttribute("initialCalcTableJson");
-			String ricJson = (String) session.getAttribute("originalTableJson");
-			model.addAttribute("initialCalcTableJson", initJson != null ? initJson : "[]");
-			model.addAttribute("ricJson", ricJson != null ? ricJson : "[]");
-			// Set the fields used for the second stage to empty
-			model.addAttribute("currentRelationsManualJson", "[]");
-			model.addAttribute("currentRelationsColumnsJson", "[]");
-			model.addAttribute("currentRelationsFdsJson", "[]");
-			model.addAttribute("currentRelationsFdsOriginalJson", "[]");
-			model.addAttribute("currentGlobalRicJson", "[]");
-			model.addAttribute("currentUnionColsJson", "[]");
-			model.addAttribute("currentGlobalManualRowsJson", "[]");
+		} else if (!initialStatePopulated) {
+			populateInitialNormalization(session, model);
 		}
 
 		String fdList = (String) session.getAttribute("fdList");
@@ -185,5 +220,20 @@ public class PageController {
 		model.addAttribute("transitiveFdStrings", transitiveFdStrings);
 
 		return "normalization";
+	}
+
+	private void populateInitialNormalization(HttpSession session, Model model) {
+		String initJson = (String) session.getAttribute("initialCalcTableJson");
+		String ricJsonInit = (String) session.getAttribute("originalTableJson");
+		model.addAttribute("initialCalcTableJson", initJson != null ? initJson : "[]");
+		model.addAttribute("ricJson", ricJsonInit != null ? ricJsonInit : "[]");
+		model.addAttribute("currentRelationsManualJson", "[]");
+		model.addAttribute("currentRelationsColumnsJson", "[]");
+		model.addAttribute("currentRelationsFdsJson", "[]");
+		model.addAttribute("currentRelationsFdsOriginalJson", "[]");
+		model.addAttribute("currentRelationsRicJson", "[]");
+		model.addAttribute("currentGlobalRicJson", "[]");
+		model.addAttribute("currentUnionColsJson", "[]");
+		model.addAttribute("currentGlobalManualRowsJson", "[]");
 	}
 }

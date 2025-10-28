@@ -24,6 +24,7 @@ public class NormalizationController {
 	private static final String START_TIME_SESSION_KEY = "normalizationSessionStart";
 	private static final String BCNF_SUMMARY_SESSION_KEY = "bcnfSummary";
 	private static final String RESTORE_SESSION_KEY = "normalizationRestoreState";
+	private static final String RESET_SESSION_KEY = "normalizationReset";
 
 	@Autowired
 	public NormalizationController(LogService logService) {
@@ -49,6 +50,7 @@ public class NormalizationController {
 		// Reset attempts counter after a successful advance
 		session.removeAttribute("normalizeAttempts");
 
+		session.removeAttribute(RESET_SESSION_KEY);
 		// Redirect to normalization page
 		return "redirect:/normalization";
 	}
@@ -65,10 +67,15 @@ public class NormalizationController {
 	// Adding new API method
 	@PostMapping("/log-success")
 	public ResponseEntity<?> logBcnfSuccess(@RequestParam("userName") String userName,
-											@RequestParam("attempts") int attempts,
-											@RequestParam("elapsedTime") long elapsedTime) {
+											  @RequestParam("attempts") int attempts,
+											  @RequestParam("elapsedTime") long elapsedTime,
+											  HttpSession session) {
 		try {
-			logService.logBcnfSuccess(userName, attempts, elapsedTime);
+			Integer tableCount = (Integer) session.getAttribute("bcnfTableCount");
+			Boolean dependencyPreserved = (Boolean) session.getAttribute("bcnfDependencyPreserved");
+			logService.logBcnfSuccess(userName, attempts, elapsedTime, tableCount, dependencyPreserved);
+			session.removeAttribute("bcnfTableCount");
+			session.removeAttribute("bcnfDependencyPreserved");
 			return ResponseEntity.ok().build();
 		} catch (Exception e) {
 			System.err.println("Error logging BCNF success: " + e.getMessage());
@@ -81,7 +88,32 @@ public class NormalizationController {
 		if (body == null || body.isEmpty()) {
 			return ResponseEntity.badRequest().body("BCNF data payload is empty.");
 		}
-		session.setAttribute(BCNF_SUMMARY_SESSION_KEY, body);
+		Map<String, Object> summaryData = new HashMap<>(body);
+
+		Number attemptsFromSession = (Number) session.getAttribute("bcnfAttempts");
+		if (attemptsFromSession != null) {
+			summaryData.put("attempts", attemptsFromSession.intValue());
+		}
+
+		Number elapsedFromSession = (Number) session.getAttribute("bcnfElapsedTime");
+		if (elapsedFromSession != null) {
+			summaryData.put("elapsedTime", elapsedFromSession.longValue());
+		}
+
+		Integer tableCount = (Integer) session.getAttribute("bcnfTableCount");
+		if (tableCount != null) {
+			summaryData.put("tableCount", tableCount);
+		}
+
+		Boolean dependencyPreserved = (Boolean) session.getAttribute("bcnfDependencyPreserved");
+		if (dependencyPreserved != null) {
+			summaryData.put("dependencyPreserved", dependencyPreserved);
+		}
+
+		session.setAttribute(BCNF_SUMMARY_SESSION_KEY, summaryData);
+		session.removeAttribute("bcnfAttempts");
+		session.removeAttribute("bcnfElapsedTime");
+		session.removeAttribute("normalizationSessionStart");
 		Map<String, Object> response = new HashMap<>();
 		response.put("redirectUrl", "/normalize/bcnf-summary");
 		return ResponseEntity.ok(response);
@@ -123,31 +155,9 @@ public class NormalizationController {
 	}
 	@GetMapping("/previous")
 	public String returnToPrevious(HttpSession session) {
-		@SuppressWarnings("unchecked")
-		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
-		if (history != null && !history.isEmpty()) {
-			System.out.println("[NormalizationController] Returning to previous step. History size before pop: " + history.size());
-			Map<String, Object> restoreState;
-			if (history.size() > 1) {
-				history.remove(history.size() - 1); // drop current (latest) step
-				session.setAttribute(HISTORY_SESSION_KEY, history);
-				restoreState = history.get(history.size() - 1);
-			} else {
-				restoreState = history.get(0); // keep single entry for restoration
-			}
-
-			if (restoreState != null) {
-				System.out.println("[NormalizationController] Restoring state: " + gson.toJson(restoreState));
-				session.setAttribute(RESTORE_SESSION_KEY, restoreState);
-				session.setAttribute("usingDecomposedAsOriginal", Boolean.TRUE);
-			} else {
-				clearRestoreState(session);
-			}
-		} else {
-			System.out.println("[NormalizationController] No history to restore.");
-			clearRestoreState(session);
-		}
-
+		session.setAttribute(RESET_SESSION_KEY, Boolean.TRUE);
+		session.removeAttribute(HISTORY_SESSION_KEY);
+		clearRestoreState(session);
 		return "redirect:/normalization";
 	}
 

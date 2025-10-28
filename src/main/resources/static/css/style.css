@@ -13,6 +13,53 @@ body {
     align-items: center;
     min-height: 100vh;
 }
+/* Live computation status modal */
+.live-status-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    margin-top: 10px;
+}
+
+.live-status-spinner {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 4px solid rgba(100, 116, 139, 0.25);
+    border-top-color: #3b82f6;
+    animation: live-status-spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes live-status-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.live-status-content {
+    flex: 1;
+    text-align: left;
+}
+
+.live-status-note {
+    margin: 0 0 12px;
+    color: #1e293b;
+    font-weight: 500;
+}
+
+.live-status-log {
+    margin: 0;
+    padding-left: 20px;
+    max-height: 240px;
+    overflow-y: auto;
+    color: #334155;
+    font-size: 0.95rem;
+}
+
+.live-status-log li + li {
+    margin-top: 6px;
+}
 
 .section-heading-sm {
     position: relative;
@@ -62,8 +109,9 @@ body {
 }
 /* Plaque calculator header settings */
 .app-brand {
-    display: inline-flex;
+    display: flex;
     align-items: center;
+    justify-content: center;
     gap: 16px;
     padding: 20px 32px;
     border-radius: 24px;
@@ -71,25 +119,49 @@ body {
     color: #ffffff;
     box-shadow: 0 18px 35px rgba(30, 58, 138, 0.28);
     margin-bottom: 34px;
-}
-.brand-text {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
 }
 .brand-name {
     font-size: 2.4rem;
     font-weight: 600;
     letter-spacing: -0.015em;
 }
+.brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+    align-items: center;
+    width: 100%;
+}
 .brand-tagline {
+    position: relative;
     font-size: 0.95rem;
     opacity: 0.82;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    overflow: hidden;
+    display: block;
+    max-width: 100%;
 }
-
+.brand-tagline__scroller {
+    display: inline-block;
+    white-space: nowrap;
+    animation: brand-tagline-scroll 9s linear infinite;
+}
+.brand-tagline__text {
+    display: inline-block;
+    margin-right: 48px;
+}
+@keyframes brand-tagline-scroll {
+    0% {
+        transform: translateX(100%);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
 /* Input & parameters header */
 .section-heading {
     position: relative;
@@ -589,30 +661,52 @@ input[type="file"]::file-selector-button:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 0px;
+}
+.fd-results-wrapper {
+    margin: 20px auto 30px auto;
+    max-width: 700px;
+    text-align: center;
 }
 
-#fdListUl {
-    list-style: disc;
-    margin: 0 auto 12px;
+.fd-results-wrapper .result-section-title {
+    display: block;
+    width: fit-content;
+    margin: 0 auto 16px;
+    text-align: center;
+}
+
+.fd-pill-list {
+    list-style: none;
+    margin: 10px 0 0 0;
     padding: 0;
-    display: inline-block;
-    text-align: left;
-}
-
-.tables-side-by-side {
     display: flex;
-    gap: 60px;
-    justify-content: center;
-    align-items: flex-start;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
 }
 
+.fd-pill-list li {
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.fd-pill-list li.inferred {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.fd-closure-btn {
+    margin: 16px auto 0 auto;
+    display: inline-block;
+}
 .tables-side-by-side .table-wrapper {
     flex: 0 1 340px;
     text-align: center;
 }
-
 /* Highlight row settings */
 #resultTable tbody tr.highlight {
     background-color: #fee2e2;
@@ -633,6 +727,9 @@ input[type="file"]::file-selector-button:hover {
 .plaque-cell {
     color: inherit;
 }
+.plaque-cell.plaque-light-text {
+    color: #ffffff !important;
+}
 /* Show Transitive Closure FDs button positioning */
 #showClosureBtn {
     display: block;
@@ -644,11 +741,11 @@ input[type="file"]::file-selector-button:hover {
 #fdListSection {
     text-align: center;
     max-width: 600px;
-    margin: 0 auto 10px auto;
+    margin: 0 auto 20px auto;
 }
 
-#fdListSection h3 {
-    margin-bottom: 15px;
+#fdListSection h4 {
+    margin: 0;
 }
 
 #fdListUl {
@@ -664,6 +761,18 @@ input[type="file"]::file-selector-button:hover {
     left: 20px;
     z-index: 100;
     margin: 0 !important;
+}
+
+.return-to-results-wrapper {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 15px;
+}
+
+.original-table-controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
 }
 
 /* Side-by-side tables for calc-results page */
@@ -987,17 +1096,17 @@ input[type="file"]::file-selector-button:hover {
     min-width: 100%;
 }
 .fd-inline-panel--compact {
-    margin: 12px 0 0;
-    padding: 14px 18px;
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+    margin: 4px 0 0;
+    padding: 12px 16px;
+    display: block;
+    width: auto;
+    align-self: flex-start;
+}
+.fd-inline-panel--compact h4 {
+    margin: 0 0 10px;
 }
 .fd-inline-panel--compact ul {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    width: auto;
 }
 .fd-inline-panel--compact ul li {
     background: #e2e8f0;
@@ -1208,39 +1317,8 @@ input[type="file"]::file-selector-button:hover {
     padding: 6px 10px;
     font-size: 0.88rem;
 }
-
 #decomposedTablesContainer .decomposed-wrapper.orig-as-original {
     margin: 1.5rem;
-}
-
-/* Student Logout Button Style */
-.student-logout-button {
-    /* Positioning */
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 1000;
-
-    /* Appearance */
-    background-color: #f97316;
-    color: white;
-    padding: 8px 15px;
-    border: none;
-    border-radius: 6px;
-    text-decoration: none;
-    font-size: 1em;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    transition: background-color 0.3s ease;
-}
-
-.student-logout-button:hover {
-    background-color: #ea580c;
-}
-a.button {
-    text-decoration: none;
-    color: white;
 }
 /* BCNF tables page styles */
 .bcnf-summary-container {
@@ -1336,14 +1414,11 @@ a.button {
     background: #f8fafc;
     border: 1px solid rgba(148, 163, 184, 0.4);
     border-radius: 18px;
-    padding: 22px 24px;
-    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+    padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
-}
-
-.bcnf-table-card h4 {
+    align-items: flex-start;
+    gap: 16px;
     margin: 0;
     font-size: 1.2rem;
     font-weight: 600;
@@ -1445,15 +1520,15 @@ a.button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
     padding: 12px 24px;
     border-radius: 999px;
-    background: linear-gradient(135deg, #4f46e5, #7c3aed);
-    color: #ffffff;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    box-shadow: 0 18px 30px -12px rgba(79, 70, 229, 0.55);
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    color: #f8fafc;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: none;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    text-decoration: none;
 }
 
 .button.pill:hover {
@@ -1463,6 +1538,88 @@ a.button {
 
 .button.pill:active {
     transform: translateY(0);
+}
+#decomposedRelationsContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-start;
+    width: 100%;
+    min-height: 200px;
+    justify-content: flex-start;
+}
+
+#decomposedRelationsContainer .relation-group {
+    flex: 1 1 620px;
+    max-width: 48%;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 24px;
+}
+
+#decomposedRelationsContainer .decomposed-wrapper {
+    flex: 0 0 calc(50% - 24px);
+    min-width: 320px;
+    max-width: 520px;
+    box-sizing: border-box;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+#decomposedRelationsContainer .decomposed-content,
+#decomposedRelationsContainer .decomposed-table-holder {
+    flex: 1 1 auto;
+}
+
+#decomposedRelationsContainer table {
+    width: 100%;
+    display: table;
+    border-collapse: separate;
+}
+.restore-layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.restore-layout .relation-group {
+    flex: 1 1 620px;
+    max-width: 48%;
+    min-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 24px;
+}
+
+.restore-layout .decomposed-wrapper {
+    flex: 0 0 calc(50% - 24px);
+    min-width: 320px;
+    max-width: 520px;
+    margin: 0;
+}
+
+.restore-layout .decomposed-wrapper.orig-as-original {
+    flex: 1 1 100%;
+    max-width: 100%;
+}
+
+.restore-layout .orig-as-original .fd-list-container {
+    display: none !important;
+}
+
+.restore-layout .local-decomposition-group {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-top: 12px;
 }
 
 

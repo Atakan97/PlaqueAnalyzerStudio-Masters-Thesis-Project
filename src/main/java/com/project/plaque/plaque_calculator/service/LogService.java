@@ -17,7 +17,8 @@ public class LogService {
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
-	public void logBcnfSuccess(String userName, int attempts, long elapsedTimeSecs) {
+	public void logBcnfSuccess(String userName, int attempts, long elapsedTimeSecs,
+							 Integer tableCount, Boolean dependencyPreserved) {
 		LogEntry logEntry = new LogEntry();
 		logEntry.setUserName(userName);
 		logEntry.setAttempts(attempts > 0 ? attempts : 1);
@@ -25,8 +26,17 @@ public class LogService {
 		logEntry.setTimestamp(LocalDateTime.now());
 		logEntry.setActivityType("BCNF_SUCCESS"); // Define activity type
 
+		try {
+			var details = objectMapper.createObjectNode();
+			details.put("Total Decomposed Table Count", tableCount != null ? tableCount : 0);
+			details.put("Decomposition Dependency-Preserving Status", dependencyPreserved != null && dependencyPreserved);
+			logEntry.setDetailsJson(objectMapper.writeValueAsString(details));
+		} catch (Exception ex) {
+			logEntry.setDetailsJson(null);
+		}
+
 		// Save using LogRepository
 		logRepository.save(logEntry);
-		System.out.println("LOGGED BCNF SUCCESS: User=" + userName + ", Attempts=" + attempts + ", Time=" + elapsedTimeSecs + "s");
+		System.out.println("Logged BCNF Success: User=" + userName + ", Attempts=" + attempts + ", Time=" + elapsedTimeSecs + "s, Tables=" + (tableCount != null ? tableCount : 0) + ", DP=" + (dependencyPreserved != null && dependencyPreserved));
 	}
 }
