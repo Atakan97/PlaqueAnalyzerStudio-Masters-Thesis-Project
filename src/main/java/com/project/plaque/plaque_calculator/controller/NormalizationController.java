@@ -67,9 +67,9 @@ public class NormalizationController {
 	// Adding new API method
 	@PostMapping("/log-success")
 	public ResponseEntity<?> logBcnfSuccess(@RequestParam("userName") String userName,
-											  @RequestParam("attempts") int attempts,
-											  @RequestParam("elapsedTime") long elapsedTime,
-											  HttpSession session) {
+											@RequestParam("attempts") int attempts,
+											@RequestParam("elapsedTime") long elapsedTime,
+											HttpSession session) {
 		try {
 			Integer tableCount = (Integer) session.getAttribute("bcnfTableCount");
 			Boolean dependencyPreserved = (Boolean) session.getAttribute("bcnfDependencyPreserved");

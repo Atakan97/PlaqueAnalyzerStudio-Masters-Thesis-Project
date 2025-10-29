@@ -338,6 +338,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const MIN_PROGRESS_MS = 1200;
         const MIN_AFTER_LAST_PROGRESS_MS = 600;
 
+        const buildProgressHtml = (noteText, status = 'running') => {
+            const listItems = progressItems.map(item => `<li>${item}</li>`).join('');
+            const iconHtml = status === 'running'
+                ? '<div class="live-status-spinner"></div>'
+                : '<div class="live-status-icon live-status-icon--success">✓</div>';
+            return `
+                <div class="live-status-wrapper">
+                    ${iconHtml}
+                    <div class="live-status-content">
+                        <p class="live-status-note">${noteText}</p>
+                        <ul class="live-status-log">${listItems}</ul>
+                    </div>
+                </div>
+            `;
+        };
+
         const renderModal = (title, htmlContent) => {
             const result = Swal.fire({
                 title,
@@ -353,16 +369,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         const updateModal = () => {
-            const listItems = progressItems.map(item => `<li>${item}</li>`).join('');
-            const html = `
-                <div class="live-status-wrapper">
-                    <div class="live-status-spinner"></div>
-                    <div class="live-status-content">
-                        <p class="live-status-note">Calculation is running. After the calculations are completed, results page can be directed.</p>
-                        <ul class="live-status-log">${listItems}</ul>
-                    </div>
-                </div>
-            `;
+            const html = buildProgressHtml('Calculation is running. After the calculations are completed, results page can be directed.', 'running');
             if (!Swal.isVisible()) {
                 renderModal('Computation Status', html);
             } else {
@@ -393,13 +400,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const afterProgressWait = Math.max(MIN_AFTER_LAST_PROGRESS_MS - sinceLastProgress, 0);
             const waitMs = Math.max(basicWait, afterProgressWait);
             setTimeout(() => {
+                const completionHtml = buildProgressHtml('Computation completed. The calculation steps can be examined below, by clicking the "Show Results" button page will be directed to the calculation results.', 'success');
                 Swal.fire({
-                    icon: 'success',
-                    title: 'Computation Finished',
-                    text: 'Click the button to be directed to the results page.',
-                    confirmButtonText: 'Show Results',
+                    title: 'Computation Status',
+                    html: completionHtml,
                     allowOutsideClick: false,
-                    allowEscapeKey: false
+                    allowEscapeKey: false,
+                    showConfirmButton: true,
+                    confirmButtonText: 'Show Results',
+                    focusConfirm: true,
+                    didOpen: () => {
+                        Swal.getHtmlContainer().querySelector('.live-status-log')?.scrollTo({ top: 999999, behavior: 'smooth' });
+                    }
                 }).then(() => {
                     window.location.href = redirectUrl;
                 });

@@ -29,7 +29,7 @@
       <h2 class="section-heading">Input Data</h2>
 
       <div id="section-upload" class="tab-content">
-        <p class="hint" style="margin-bottom: 10px;">Upload CSV file or enter data manually.</p>
+        <p class="hint hint--info" style="margin-bottom: 10px;">Upload CSV file or enter data manually.</p>
         <input type="file" id="csvfile" name="csvfile" accept=".csv" />
 
         <hr style="margin: 15px 0; border: 0; border-top: 1px solid #ccc;"> <div id="manual-data-controls">
@@ -47,7 +47,7 @@
           </table>
         </div>
         <button type="button" id="addRow" class="small">+ Add Row</button>
-        <div class="hint">Please use tabular format. Column names in the first row.</div>
+        <div class="hint hint--info">Please use tabular format. Column names in the first row.</div>
       </div>
 
       </div>
@@ -57,7 +57,7 @@
       <h2 class="section-heading">Functional Dependencies</h2>
 
       <div id="fd-manual" class="tab-content">
-        <p class="hint" style="margin-bottom: 10px;">Upload CSV file or enter FDs manually.</p>
+        <p class="hint hint--info" style="margin-bottom: 10px;">Upload CSV file or enter FDs manually.</p>
         <div id="fd-upload-content">
           <input type="file" name="fdfile" id="fdfile" accept=".txt,.csv" />
         </div>
@@ -70,21 +70,36 @@
             <thead><tr><th>#</th><th>X</th><th>→</th><th>Y</th><th>Del</th></tr></thead>
             <tbody></tbody>
           </table>
-          <div class="hint">Please enter one FD per line, format: X→Y</div>
+          <div class="hint hint--info">Please enter one FD per line, format: X→Y</div>
         </div>
       </div>
     </div>
   </div>
   <div class="options">
-  <label><input type="checkbox" id="mcCheckbox" name="monteCarlo" /> Use Monte Carlo Approximation</label>
-  <label># of Samples: <input type="number" id="samples" name="samples" value="100000" disabled /></label>
-</div>
+    <div class="options-glass-grid">
+      <label class="toggle-switch">
+        <input type="checkbox" id="mcCheckbox" name="monteCarlo" />
+        <span class="toggle-slider"></span>
+      </label>
+      <div class="toggle-label-container">
+        <div class="toggle-label-main">Monte Carlo Approximation</div>
+        <div class="toggle-label-sub">Enable Monte Carlo Approximation for faster computation</div>
+      </div>
+    </div>
+    <div class="glass-input-section">
+      <div class="glass-input-wrapper">
+        <label for="samples">Sample Size:</label>
+        <input type="number" id="samples" name="samples" value="100000" disabled />
+      </div>
+    </div>
+  </div>
 
   <input type="hidden" name="manualData" id="manualData" />
   <input type="hidden" name="fds"        id="fdsInput" />
 
   <div class="compute-btn-wrapper">
     <button type="submit" id="computeBtn" class="compute-btn pill">Compute Plaque</button>
+    <p class="hint compute-hint">Runs the relational information content calculation and streams progress live before showing the results.</p>
   </div>
 </form>
 

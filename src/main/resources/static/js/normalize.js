@@ -704,12 +704,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderHistoryRelations() {
         console.groupCollapsed('renderHistoryRelations');
-        console.log('raw window.currentRelationsColumns:', window.currentRelationsColumns);
-        console.log('raw window.currentRelationsManual:', window.currentRelationsManual);
-        console.log('raw window.currentRelationsFds:', window.currentRelationsFds);
-        console.log('raw window.currentRelationsFdsOriginal:', window.currentRelationsFdsOriginal);
-        console.log('raw window.currentRelationsRic:', window.currentRelationsRic);
-
         const colsRaw = window.currentRelationsColumns || null;
         const crCols = normalizeWindowArray(colsRaw);
         console.log('normalized columns:', crCols);
@@ -728,11 +722,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const crFds = normalizeWindowArray(fdsRaw);
         const crFdsOriginal = normalizeWindowArray(fdsOriginalRaw);
         const crRic = normalizeWindowArray(ricRaw);
-        console.log('normalized manual:', crManual);
-        console.log('normalized fds:', crFds);
-        console.log('normalized fds original:', crFdsOriginal);
-        console.log('normalized ric matrices:', crRic);
-
         const host = relationsContainer || decContainer;
         if (!host) return false;
 
@@ -747,13 +736,6 @@ document.addEventListener('DOMContentLoaded', () => {
         host.style.justifyContent = 'flex-start';
 
         const isRestoreHost = host === relationsContainer;
-        console.log('renderHistoryRelations: host prepared', {
-            hostId: host?.id,
-            isRestoreHost,
-            hostClassList: host ? Array.from(host.classList) : [],
-            targetChildCount: crCols.length
-        });
-
         if (host !== relationsContainer && relationsContainer) {
             relationsContainer.innerHTML = '';
             relationsContainer.style.display = 'none';
@@ -795,13 +777,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const manualData = normalizeManualEntry(crManual[i]);
             const localFds = normalizeToStringList(crFds[i]);
             const originalFds = normalizeToStringList(crFdsOriginal[i]);
-            console.log('renderHistoryRelations: preparing table', i, {
-                columns,
-                manualData,
-                localFds,
-                originalFds
-            });
-
             let ricMatrixForTable = [];
             if (Array.isArray(crRic) && i < crRic.length) {
                 try {
@@ -819,7 +794,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const group = createRelationGroup({ relationId: `history-${i}` });
-            console.log('renderHistoryRelations: relation group created', i, group);
             if (!group) continue;
 
             const relationTitle = `Relation R${i + 1}`;
@@ -837,16 +811,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (baseWrapper) {
-                console.log('renderHistoryRelations: base wrapper ready', i, baseWrapper);
-                console.log('renderHistoryRelations: base wrapper dataset', i, { dataset: { ...baseWrapper.dataset }, childCount: baseWrapper.childElementCount });
                 const fdHeading = baseWrapper.querySelector('.fd-list-container h4');
                 if (fdHeading) fdHeading.style.display = 'block';
             }
 
             ensureLocalContainer(group);
-            console.log('renderHistoryRelations: group children count', i, group.children.length);
         }
-        console.log('renderHistoryRelations: final host child count', host.children.length);
         console.groupEnd();
 
         if (origContainer) origContainer.style.display = 'none';
@@ -1866,7 +1836,6 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let i = 0; i < wrappers.length; i++) {
                 const w = wrappers[i];
                 try {
-                    console.log('computeAll: now computing per-table RIC for wrapper idx=', i);
                     // computeRicForWrapper will fetch /normalize/decompose and update that wrapper's tbody/fd-list
                     let baseCols = null;
                     if (Array.isArray(scopedBaseColumns) && scopedBaseColumns.length) {
@@ -1882,7 +1851,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     await computeRicForWrapper(w, baseCols);
-                    console.log('computeAll: per-table RIC complete for wrapper idx=', i);
                 } catch (e) {
                     console.warn('computeAll: per-table RIC failed for wrapper idx=', i, e);
                 }
@@ -2013,17 +1981,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let decomposedCols = [];
-
-        console.log('createDecomposedTable: start', {
-            origMode,
-            autoAppend,
-            parentContainer,
-            initialCols,
-            initialManualData,
-            initialFds,
-            initialRicMatrix
-        });
-
         let newDecomposedNumber = 1;
         if (!origMode) {
             //  Only count 'Decomposed Table X' headers
@@ -2126,13 +2083,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 relationsContainer.appendChild(wrapper);
             }
         }
-
-        console.log('createDecomposedTable: appended', {
-            parentContainerUsed: parentContainer || (decContainer && decContainer.style.display !== 'none' ? decContainer : relationsContainer),
-            wrapper,
-            wrapperParent: wrapper.parentElement
-        });
-
         // Dataset placeholders
         wrapper.dataset.columns = JSON.stringify([]);
         wrapper.dataset.projectedFds = JSON.stringify([]);
@@ -2147,20 +2097,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (initialRicMatrix) {
             try { wrapper.dataset.ricMatrix = JSON.stringify(initialRicMatrix); } catch (err) {}
         }
-
-        console.log('createDecomposedTable: end', {
-            dataset: {
-                restoredManualData: wrapper.dataset.restoredManualData,
-                baseColumns: wrapper.dataset.baseColumns,
-                ricMatrix: wrapper.dataset.ricMatrix
-            }
-        });
-
-        console.log('createDecomposedTable: restore rendering', {
-            wrapper,
-            decomposedCols,
-            dataset: Object.assign({}, wrapper.dataset)
-        });
 
         // External updater
         wrapper.updateFromColumns = function(newCols) {
