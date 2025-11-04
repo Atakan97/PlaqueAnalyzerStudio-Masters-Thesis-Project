@@ -625,8 +625,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Check if a relation is in BCNF
+    // Check if a relation is in BCNF (frontend)
     async function checkRelationBCNF(wrapper, columns, fds) {
+        // If the wrapper has a data attribute indicating BCNF status from the backend, use that
+        if (wrapper && wrapper.dataset.normalForm === 'BCNF') {
+            return true;
+        }
+
         if (!columns || columns.length === 0) return true; // Empty relation is trivially BCNF
 
         try {
@@ -777,9 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Get description for normal form tooltip
-     */
+    // Get description for normal form tooltip
     function getNormalFormDescription(nf, isCurrent) {
         const descriptions = {
             '1NF': 'First Normal Form: All attributes are atomic',
@@ -929,6 +932,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const titleEl = wrapper.querySelector('h3');
         if (titleEl && relationTitle) titleEl.textContent = relationTitle;
 
+        // Set the normal form from backend if available
+        if (normalForm) {
+            wrapper.dataset.normalForm = normalForm;
+        }
+        
         // BCNF status check and badge
         const cols = columns;
         const fdsForCheck = fdOriginal.length ? fdOriginal : fdList;
