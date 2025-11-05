@@ -225,11 +225,18 @@ public class RicService {
 	 * the resulting ric matrix.
 	 */
 	private double[][] computeRicFromManualDataInternal(String manualEncoded, String topLevelFds,
-															int timeLimitSeconds, boolean monteCarlo, int samples) {
+						int timeLimitSeconds, boolean monteCarlo, int samples) {
 		if (manualEncoded == null) manualEncoded = "";
 		manualEncoded = manualEncoded.trim();
 
+		System.out.println("[RIC] computeRicFromManualDataInternal called");
+		System.out.println("[RIC] manualEncoded length: " + manualEncoded.length());
+		System.out.println("[RIC] topLevelFds: '" + topLevelFds + "'");
+		System.out.println("[RIC] monteCarlo: " + monteCarlo + ", samples: " + samples);
+		System.out.println("[RIC] timeLimitSeconds: " + timeLimitSeconds);
+
 		if (!Files.exists(ricJar)) {
+			System.out.println("[RIC] ERROR: RIC jar not found at: " + ricJar.toAbsolutePath());
 			throw new IllegalStateException("RIC jar not found at: " + ricJar.toAbsolutePath());
 		}
 
@@ -238,7 +245,9 @@ public class RicService {
 		Thread outputReader = null;
 		try {
 			outFile = Files.createTempFile("ric-out-", ".csv");
+			System.out.println("[RIC] Output file: " + outFile.toAbsolutePath());
 		} catch (IOException e) {
+			System.out.println("[RIC] ERROR: Cannot create temp file for RIC output");
 			throw new RuntimeException("Cannot create temp file for RIC output", e);
 		}
 
@@ -246,40 +255,29 @@ public class RicService {
 		args.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
 		args.add("-jar");
 		args.add(ricJar.toAbsolutePath().toString());
-
-		// Passing encoded table as single arg
 		args.add(manualEncoded);
-
 		args.add("-e");
 		args.add("--closure");
 		args.add("--name");
 		args.add(outFile.toAbsolutePath().toString());
 		args.add("-i");
 		args.add("-s");
-
-
-		// Adding Monte Carlo approximation option
 		if (monteCarlo) {
 			args.add("-r");
 			args.add(String.valueOf(samples));
 		}
-
-		// Normalize and split FDs
 		List<String> fdsList = new ArrayList<>();
 		if (topLevelFds != null && !topLevelFds.trim().isEmpty()) {
-			// Normalize some arrow symbols to simple ASCII form then split
 			String norm = topLevelFds.replace('→', '-').replace("—", "-");
-			// Split on semicolon or newline
-			String[] fdParts = norm.split("[;\\r\\n]+");
+			String[] fdParts = norm.split("[;\r\n]+");
 			for (String seg : fdParts) {
 				String tok = seg == null ? "" : seg.trim();
 				if (!tok.isEmpty()) fdsList.add(tok);
 			}
 		}
-
 		if (!fdsList.isEmpty()) args.addAll(fdsList);
+		System.out.println("[RIC] Process args: " + args);
 
-		// Using processbuilder
 		ProcessBuilder pb = new ProcessBuilder(args);
 		pb.redirectErrorStream(true);
 		pb.directory(Paths.get(".").toFile());
@@ -288,17 +286,13 @@ public class RicService {
 		try {
 			process = pb.start();
 			final Process procRef = process;
-
 			Thread reader = new Thread(() -> {
 				try (BufferedReader in = new BufferedReader(new InputStreamReader(procRef.getInputStream()))) {
 					String line;
 					while ((line = in.readLine()) != null) {
 						procOutput.append(line).append(System.lineSeparator());
 					}
-					// Ignore stream read issues
-				} catch (IOException ignore) {
-
-				}
+				} catch (IOException ignore) {}
 			});
 			reader.setDaemon(true);
 			reader.start();
@@ -306,38 +300,38 @@ public class RicService {
 
 			boolean finished = process.waitFor(Math.max(1, timeLimitSeconds), TimeUnit.SECONDS);
 			if (!finished) {
+				System.out.println("[RIC] ERROR: RIC process timed out after " + timeLimitSeconds + " seconds");
 				process.destroyForcibly();
 				reader.join(Math.min(TimeUnit.SECONDS.toMillis(timeLimitSeconds), 2000));
 				throw new RicTimeoutException("RIC process timed out after " + timeLimitSeconds + " seconds");
 			}
 			reader.join(TimeUnit.SECONDS.toMillis(2));
 			int exit = process.exitValue();
-			if (exit != 0) {
-				throw new RuntimeException("RIC process exited with code " + exit + ". Output:\n" + procOutput.toString());
-			}
+			System.out.println("[RIC] Process exit code: " + exit);
+			System.out.println("[RIC] Process output (stdout):\n" + procOutput);
 
 			if (!Files.exists(outFile)) {
-				// Fallback to stdout parsing
+				System.out.println("[RIC] WARNING: Output file not found, falling back to stdout parsing");
 				return parseRicFromStdout(procOutput.toString());
 			}
 
 			List<String> lines = Files.readAllLines(outFile);
+			System.out.println("[RIC] Output file line count: " + lines.size());
 			List<String> numericLines = lines.stream()
-					.map(String::trim)
-					.filter(s -> !s.isEmpty())
-					.collect(Collectors.toList());
+				.map(String::trim)
+				.filter(s -> !s.isEmpty())
+				.collect(Collectors.toList());
+			System.out.println("[RIC] Numeric line count: " + numericLines.size());
 
 			List<double[]> rows = new ArrayList<>();
 			for (String l : numericLines) {
-				String[] parts = l.split("[,\\s]+");
+				String[] parts = l.split("[,\s]+");
 				List<Double> vals = new ArrayList<>();
 				for (String tok : parts) {
 					if (tok == null || tok.isBlank()) continue;
 					try {
 						vals.add(Double.parseDouble(tok));
-						// Skip non-numeric tokens
-					} catch (NumberFormatException nfe) {
-					}
+					} catch (NumberFormatException nfe) {}
 				}
 				if (!vals.isEmpty()) {
 					double[] darr = new double[vals.size()];
@@ -345,8 +339,10 @@ public class RicService {
 					rows.add(darr);
 				}
 			}
+			System.out.println("[RIC] Parsed row count: " + rows.size());
 
 			if (rows.isEmpty()) {
+				System.out.println("[RIC] WARNING: No rows parsed from output file, falling back to stdout parsing");
 				return parseRicFromStdout(procOutput.toString());
 			}
 
@@ -363,12 +359,15 @@ public class RicService {
 					out[r] = rr;
 				}
 			}
+			System.out.println("[RIC] Final output matrix size: " + out.length + "x" + (out.length > 0 ? out[0].length : 0));
 			return out;
 
 		} catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();
+			System.out.println("[RIC] ERROR: RIC process was interrupted");
 			throw new RuntimeException("RIC process was interrupted", ex);
 		} catch (IOException ex) {
+			System.out.println("[RIC] ERROR: Failed to execute RIC jar: " + procOutput);
 			throw new RuntimeException("Failed to execute RIC jar: " + procOutput.toString(), ex);
 		} finally {
 			if (outputReader != null && outputReader.isAlive()) {
@@ -386,9 +385,7 @@ public class RicService {
 				if (outFile != null) {
 					Files.deleteIfExists(outFile);
 				}
-			} catch (IOException ignore) {
-				// ignore cleanup failure
-			}
+			} catch (IOException ignore) {}
 		}
 	}
 

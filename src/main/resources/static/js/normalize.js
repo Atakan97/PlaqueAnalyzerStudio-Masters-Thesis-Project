@@ -1422,9 +1422,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!resp.ok) {
                 const text = await resp.text();
+                console.error('Backend hatası:', text || resp.statusText);
                 throw new Error(text || resp.statusText);
             }
             const json = await resp.json();
+            console.log('Backend yanıtı:', JSON.stringify(json, null, 2)); // Bu satırı ekleyin
             if (storeResult) {
                 window._lastDecomposeResult = json; // Keep for possible future use
             }
@@ -1512,12 +1514,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const finalMessage = [
                 'Decomposition Check Results:',
                 '',
-                `• ${coverageResult.message}`,
-                `• ${result.ljMessage}`,
-                `• ${result.dpMessage}`
+                `\u2022 ${coverageResult.message}`,
+                `\u2022 ${result.ljMessage}`,
+                `\u2022 ${result.dpMessage}`
             ].join('\n');
 
-            const success = result.ljValid && result.dpValid;
+            // success tanımı dependency-preserving olmadan kontrol edilecek
+            const success = result.ljValid && coverageResult.valid;
             await Swal.fire({
                 icon: success ? 'info' : 'warning',
                 title: success ? 'Decomposition Valid' : 'Decomposition Issues',
@@ -1527,7 +1530,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (success) {
                 if (result.rawResponse) {
-                    renderDpLjStatus(result.rawResponse);
+                    renderDpLjStatus(result.rawResponse, relationGroup);
                 }
                 localWrappers.forEach(w => {
                     try { w.dataset.baseColumns = JSON.stringify(baseColumns); } catch (err) {}
@@ -1776,7 +1779,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (allChecksResult.rawResponse) {
-                renderDpLjStatus(allChecksResult.rawResponse);
+                renderDpLjStatus(allChecksResult.rawResponse, null);
             }
             // Locking after successful check
             lockDecomposedTables();
@@ -2850,49 +2853,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // DP/LJ render + Continue button
-    function renderDpLjStatus(resp) {
-        let box = document.getElementById('dpLjStatusBox');
-        if (!box) {
-            box = document.createElement('div');
-            box.id = 'dpLjStatusBox';
-            box.style.display = 'block';
-            box.style.margin = '12px 0';
-            box.style.padding = '10px';
-            box.style.border = '1px solid #ccc';
-            document.getElementById('decomposedTablesContainer')?.after(box);
+    function renderDpLjStatus(resp, relationGroup = null) {
+        let box;
+        if (relationGroup) {
+            box = relationGroup.querySelector('.dpLjStatusBox');
+            if (!box) {
+                box = document.createElement('div');
+                box.className = 'dpLjStatusBox';
+                box.style.display = 'block';
+                box.style.margin = '12px 0';
+                relationGroup.appendChild(box);
+            }
+        } else {
+            box = document.getElementById('dpLjStatusBox');
+            if (!box) {
+                box = document.createElement('div');
+                box.id = 'dpLjStatusBox';
+                box.style.display = 'block';
+                box.style.margin = '12px 0';
+                document.getElementById('decomposedTablesContainer')?.after(box);
+            }
         }
 
-        const msgs = document.getElementById('dpLjMessages') || (() => {
-            const d = document.createElement('div'); d.id='dpLjMessages'; box.prepend(d); return d;
-        })();
-
-        console.log('renderDpLjStatus: dp,lj=', resp.dpPreserved, resp.ljPreserved);
-        const continueBtn = document.getElementById('continueNormalizationBtn');
-
+        let msgs = box.querySelector('.dpLjMessages');
+        if (!msgs) {
+            msgs = document.createElement('div');
+            msgs.className = 'dpLjMessages';
+            box.appendChild(msgs);
+        }
         msgs.innerHTML = '';
 
         const dp = Boolean(resp.dpPreserved);
-
-        const ul = document.createElement('ul');
-        ul.style.margin = '0';
-        ul.style.paddingLeft = '1.1em';
-
-        const liDp = document.createElement('li');
-        liDp.textContent = dp ? 'The decomposition is dependency-preserving.' : 'The decomposition is not dependency-preserving.';
-        ul.appendChild(liDp);
-        liDp.style.color = dp ? 'green' : '#b65a00';
-        ul.appendChild(liDp);
-
-        msgs.appendChild(ul);
-
+        const msgText = dp
+            ? 'The decomposition is dependency-preserving.'
+            : 'The decomposition is not dependency-preserving.';
+        const hintDiv = document.createElement('div');
+        hintDiv.className = 'hint hint--info';
+        hintDiv.textContent = msgText;
+        msgs.appendChild(hintDiv);
         box.style.display = 'block';
-
-        const undo = document.getElementById('undoDecompBtn');
-        if (continueBtn && undo && continueBtn.parentNode) {
-            continueBtn.parentNode.insertBefore(undo, continueBtn);
-        }
-
-        const wrappers = document.querySelectorAll('.decomposed-wrapper');
     }
 
     function collectDecompositionState() {
@@ -3154,3 +3153,4 @@ document.addEventListener('DOMContentLoaded', () => {
         showBcnfTablesBtn.addEventListener('click', handleShowBcnfTables);
     }
 });
+
