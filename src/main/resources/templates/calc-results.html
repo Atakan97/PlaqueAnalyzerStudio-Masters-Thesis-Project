@@ -17,23 +17,14 @@
 
 <h1 class="results-heading">Calculation Results</h1>
 
-<div class="ric-status" th:if="${ricSteps != null and !ricSteps.isEmpty()}">
-  <h3 class="status-heading">Computation Status</h3>
-  <ul>
-    <li th:each="step : ${ricSteps}" th:text="${step}">Status message</li>
-  </ul>
-</div>
-
 <div class="results-container" style="max-width: 1200px; margin: 0 auto; padding: 20px;">
-
   <div th:if="${fdList != null and fdList != ''}" class="table-wrapper fd-results-wrapper">
     <h3 class="result-section-title">Functional Dependencies:</h3>
     <ul id="fdListUl" class="fd-pill-list">
-      <li th:each="fd : ${fdList.split(';')}" th:text="${fd}">X->Y</li>
+      <li th:each="fd : ${fdList.split(';')}" th:with="formattedFd=${#strings.replace(fd, '->', '→')}" th:text="${formattedFd}">X→Y</li>
     </ul>
 
     <button id="showClosureBtn"
-            th:if="${transitiveFdStrings != null and !transitiveFdStrings.isEmpty()}"
             class="small fd-closure-btn">Show Transitive Closure FDs</button>
   </div>
 

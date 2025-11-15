@@ -5,6 +5,7 @@ import java.util.List;
 public class DecomposeResponse {
 	private double[][] ricMatrix;
 	private List<String> projectedFDs;
+	private List<String> transitiveFDs; // Transitive closure FDs (inferred FDs)
 	private List<String> steps;
 	private String normalForm; // "BCNF", "3NF", "2NF", "1NF"
 
@@ -49,6 +50,13 @@ public class DecomposeResponse {
 	}
 	public void setNormalForm(String normalForm) {
 		this.normalForm = normalForm;
+	}
+
+	public List<String> getTransitiveFDs() {
+		return transitiveFDs;
+	}
+	public void setTransitiveFDs(List<String> transitiveFDs) {
+		this.transitiveFDs = transitiveFDs;
 	}
 
 }

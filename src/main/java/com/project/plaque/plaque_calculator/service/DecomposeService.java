@@ -175,7 +175,14 @@ public class DecomposeService {
 				.map(this::fdToString)
 				.collect(Collectors.toList());
 
+		// Calculate transitive closure FDs for the projected FDs
+		List<FD> transitiveFDs = fdService.findTransitiveFDs(projected);
+		List<String> transitiveFDsStr = transitiveFDs.stream()
+				.map(this::fdToString)
+				.collect(Collectors.toList());
+
 		DecomposeResponse resp = new DecomposeResponse(ricMatrix, fdsStr, prefixedSteps);
+		resp.setTransitiveFDs(transitiveFDsStr);
 		System.out.println("DecomposeService.decomposeWithProgress: done -> " + resp);
 		return resp;
 	}
@@ -380,8 +387,16 @@ public class DecomposeService {
 
 			// Build response item with projected FDs and normal form
 			List<String> projectedStr = minimizedProjected.stream().map(this::fdToString).collect(Collectors.toList());
+
+			// Calculate transitive closure FDs for this table
+			List<FD> transitiveFDs = fdService.findTransitiveFDs(minimizedProjected);
+			List<String> transitiveFDsStr = transitiveFDs.stream()
+					.map(this::fdToString)
+					.collect(Collectors.toList());
+
 			DecomposeResponse drResp = new DecomposeResponse(new double[0][0], projectedStr);
 			drResp.setNormalForm(normalForm);
+			drResp.setTransitiveFDs(transitiveFDsStr);
 			perTableResponses.add(drResp);
 		}
 
@@ -760,10 +775,17 @@ public class DecomposeService {
 				.map(this::fdToString)
 				.collect(Collectors.toList());
 
+		// Calculate transitive closure FDs for the projected FDs
+		List<FD> transitiveFDs = fdService.findTransitiveFDs(projected);
+		List<String> transitiveFDsStr = transitiveFDs.stream()
+				.map(this::fdToString)
+				.collect(Collectors.toList());
+
 		// Just showing functional dependencies, no calculating ric so return 0
 		double[][] emptyRic = new double[0][0];
 
 		DecomposeResponse resp = new DecomposeResponse(emptyRic, fdsStr);
+		resp.setTransitiveFDs(transitiveFDsStr);
 		System.out.println("DecomposeService.projectFDsOnly: done -> " + resp);
 		return resp;
 	}

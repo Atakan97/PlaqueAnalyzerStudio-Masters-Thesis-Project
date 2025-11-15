@@ -168,13 +168,7 @@ public class DecomposeController {
 				}
 			});
 
-			emitProgress(emitter, "Running global preservation checks (lossless-join & dependency-preserving).");
-			long globalStartNs = System.nanoTime();
 			DecomposeAllResponse aggregate = decomposeService.decomposeAll(req, session);
-			long globalElapsedMs = Math.max(0, (System.nanoTime() - globalStartNs) / 1_000_000);
-			emitProgress(emitter, "Global preservation checks completed in " + formatDuration(globalElapsedMs) + ".");
-			long totalElapsedMs = Math.max(0, (System.nanoTime() - overallStartNs) / 1_000_000);
-			emitProgress(emitter, "Normalization stream finished in " + formatDuration(totalElapsedMs) + ".");
 			emitComplete(emitter, aggregate);
 		} catch (Exception ex) {
 			emitError(emitter, ex.getMessage() == null ? "Normalization failed." : ex.getMessage());

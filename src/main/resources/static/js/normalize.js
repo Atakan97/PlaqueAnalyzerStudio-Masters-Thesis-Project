@@ -201,8 +201,19 @@ document.addEventListener('DOMContentLoaded', () => {
             // Disable the button as soon as the process starts
             if (showClosureNormBtn.disabled) return;
             showClosureNormBtn.disabled = true;
-            // Add FDs to the list
-            appendTransitiveFdsNorm(transitiveFdsArrayNorm);
+
+            // Check if there are transitive FDs to show
+            if (transitiveFdsArrayNorm && transitiveFdsArrayNorm.length > 0) {
+                // Add FDs to the list
+                appendTransitiveFdsNorm(transitiveFdsArrayNorm);
+            } else {
+                // No transitive FDs - show message
+                const messageEl = document.createElement('p');
+                messageEl.textContent = 'This set is transitively closured.';
+                messageEl.classList.add('transitive-closure-message');
+                fdListUlNorm.parentElement.appendChild(messageEl);
+            }
+
             // Remove the button from the page completely
             showClosureNormBtn.remove();
         });
@@ -545,6 +556,9 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (Array.isArray(json.fds) && json.fds.length > 0) serverProjected = json.fds.slice();
             else if (typeof json.fds === 'string' && json.fds.trim()) serverProjected = splitFdsText(json.fds);
 
+            // Get transitive FDs from response
+            const transitiveFDsList = Array.isArray(json.transitiveFDs) ? json.transitiveFDs : [];
+
             // Normalize strings
             serverProjected = serverProjected.map(s => String(s).trim()).filter(Boolean).map(s => s.replace(/\s+/g,'').replace(/→/g,'->'));
 
@@ -561,6 +575,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try { wrapper.dataset.projectedFdsOrig = JSON.stringify(serverProjected); } catch (e) {}
             try { wrapper.dataset.projectedFds = JSON.stringify(localFds); } catch (e) {}
 
+            // Store transitive FDs
+            try { wrapper.dataset.transitiveFds = JSON.stringify(transitiveFDsList); } catch (e) {}
+
             // Persist per-table RIC matrix for later review/summary usage
             try { wrapper.dataset.ricMatrix = JSON.stringify(ricMatrixSingle || []); } catch (e) {}
 
@@ -571,11 +588,65 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (fdUl) {
                     fdUl.innerHTML = '';
                     const toShow = serverProjected.length > 0 ? serverProjected : localFds;
-                    toShow.forEach(s => {
+
+                    if (toShow.length > 0) {
+                        toShow.forEach(s => {
+                            const li = document.createElement('li');
+                            li.textContent = String(s);
+                            fdUl.appendChild(li);
+                        });
+                    } else {
+                        // No FDs - show dash
                         const li = document.createElement('li');
-                        li.textContent = String(s);
+                        li.textContent = '-';
+                        li.style.background = '#f1f5f9';
+                        li.style.color = '#64748b';
                         fdUl.appendChild(li);
-                    });
+                    }
+
+                    // Show FD container now that FDs are computed
+                    if (fdContainer && fdContainer.style.display === 'none') {
+                        fdContainer.style.display = '';
+                    }
+
+                    // Attach event listener to the transitive closure button
+                    const transitiveBtn = fdContainer ? fdContainer.querySelector('.fd-closure-btn-decomposed') : null;
+                    if (transitiveBtn) {
+                        // Remove any existing listener to prevent duplicates
+                        const newBtn = transitiveBtn.cloneNode(true);
+                        transitiveBtn.parentNode.replaceChild(newBtn, transitiveBtn);
+
+                        newBtn.addEventListener('click', () => {
+                            if (newBtn.disabled) return;
+                            newBtn.disabled = true;
+
+                            if (transitiveFDsList && transitiveFDsList.length > 0) {
+                                // Add transitive FDs to the list
+                                const existingFds = new Set();
+                                Array.from(fdUl.children).forEach(li => {
+                                    existingFds.add(li.textContent.trim());
+                                });
+
+                                transitiveFDsList.forEach(fd => {
+                                    if (!existingFds.has(fd)) {
+                                        const li = document.createElement('li');
+                                        li.textContent = fd;
+                                        li.classList.add('inferred');
+                                        fdUl.appendChild(li);
+                                    }
+                                });
+                            } else {
+                                // No transitive FDs - show message
+                                const messageEl = document.createElement('p');
+                                messageEl.textContent = 'This set is transitively closured.';
+                                messageEl.classList.add('transitive-closure-message');
+                                fdUl.parentElement.appendChild(messageEl);
+                            }
+
+                            // Remove the button
+                            newBtn.remove();
+                        });
+                    }
                 }
             } catch (e) {
                 console.warn('computeRicForWrapper: failed to render fd list', e);
@@ -738,38 +809,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentIndex === -1) return; // Invalid normal form
 
-        // Create badges for all normal forms up to current
-        normalForms.forEach((nf, index) => {
-            if (index <= currentIndex) {
-                const badge = document.createElement('span');
-                badge.classList.add('normal-form-badge');
+        // Create badge only for the current normal form
+        const nf = normalForms[currentIndex];
+        const badge = document.createElement('span');
+        badge.classList.add('normal-form-badge');
 
-                // Add specific class for styling
-                const nfClass = 'nf-' + nf.toLowerCase();
-                badge.classList.add(nfClass);
+        // Add specific class for styling
+        const nfClass = 'nf-' + nf.toLowerCase();
+        badge.classList.add(nfClass);
 
-                // Highlight current normal form
-                if (index === currentIndex) {
-                    badge.classList.add('current');
-                }
+        // Highlight current normal form
+        badge.classList.add('current');
 
-                // Add check icon and text
-                const checkIcon = document.createElement('span');
-                checkIcon.classList.add('check-icon');
-                checkIcon.textContent = '✓';
+        // Add check icon and text
+        const checkIcon = document.createElement('span');
+        checkIcon.classList.add('check-icon');
+        checkIcon.textContent = '✓';
 
-                const text = document.createElement('span');
-                text.textContent = nf;
+        const text = document.createElement('span');
+        text.textContent = nf;
 
-                badge.appendChild(checkIcon);
-                badge.appendChild(text);
+        badge.appendChild(checkIcon);
+        badge.appendChild(text);
 
-                // Add tooltip
-                badge.title = getNormalFormDescription(nf, index === currentIndex);
+        // Add tooltip
+        badge.title = getNormalFormDescription(nf, true);
 
-                badgesContainer.appendChild(badge);
-            }
-        });
+        badgesContainer.appendChild(badge);
 
         // Insert badges at the top of wrapper, before FD container
         const fdContainer = wrapper.querySelector('.fd-list-container');
@@ -815,38 +881,33 @@ document.addEventListener('DOMContentLoaded', () => {
         // Invalid normal form
         if (currentIndex === -1) return;
 
-        // Create badges for all normal forms up to current
-        normalForms.forEach((nf, index) => {
-            if (index <= currentIndex) {
-                const badge = document.createElement('span');
-                badge.classList.add('normal-form-badge');
+        // Create badge only for the current normal form
+        const nf = normalForms[currentIndex];
+        const badge = document.createElement('span');
+        badge.classList.add('normal-form-badge');
 
-                // Add specific class for styling
-                const nfClass = 'nf-' + nf.toLowerCase();
-                badge.classList.add(nfClass);
+        // Add specific class for styling
+        const nfClass = 'nf-' + nf.toLowerCase();
+        badge.classList.add(nfClass);
 
-                // Highlight current normal form
-                if (index === currentIndex) {
-                    badge.classList.add('current');
-                }
+        // Highlight current normal form
+        badge.classList.add('current');
 
-                // Add check icon and text
-                const checkIcon = document.createElement('span');
-                checkIcon.classList.add('check-icon');
-                checkIcon.textContent = '✓';
+        // Add check icon and text
+        const checkIcon = document.createElement('span');
+        checkIcon.classList.add('check-icon');
+        checkIcon.textContent = '✓';
 
-                const text = document.createElement('span');
-                text.textContent = nf;
+        const text = document.createElement('span');
+        text.textContent = nf;
 
-                badge.appendChild(checkIcon);
-                badge.appendChild(text);
+        badge.appendChild(checkIcon);
+        badge.appendChild(text);
 
-                // Add tooltip
-                badge.title = getNormalFormDescription(nf, index === currentIndex);
+        // Add tooltip
+        badge.title = getNormalFormDescription(nf, true);
 
-                badgesContainer.appendChild(badge);
-            }
-        });
+        badgesContainer.appendChild(badge);
 
         // Insert badges at the top of container, before table
         const table = container.querySelector('table');
@@ -865,14 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const group = document.createElement('div');
         group.classList.add('relation-group');
         group.dataset.relationId = relationId;
-        group.style.display = 'flex';
-        group.style.flexDirection = 'column';
-        group.style.flexWrap = 'nowrap';
-        group.style.width = '100%';
-        group.style.alignItems = 'stretch';
-        group.style.justifyContent = 'stretch';
-        group.style.flex = '0 0 auto';
-        group.style.gap = '0';
+        // Remove inline styles - let CSS handle layout via .restore-layout .relation-group
 
         host.appendChild(group);
         relationMetaMap.set(group, { relationId, baseWrapper: null, localContainer: null });
@@ -887,15 +941,136 @@ document.addEventListener('DOMContentLoaded', () => {
         container.classList.add('local-decomposition-group');
         container.dataset.relationId = meta.relationId;
         container.style.display = 'flex';
-        container.style.flexWrap = 'wrap';
+        container.style.flexDirection = 'column';  // Vertical stacking
         container.style.paddingTop = '10px';
         container.style.borderTop = '1px dashed #ddd';
         container.style.gap = '20px';
         container.style.width = '100%';
-        container.style.alignItems = 'flex-start';
         group.appendChild(container);
         meta.localContainer = container;
         return container;
+    }
+
+    // Create FD lists container for multi-step normalization
+    function createRelationsFdListsContainer() {
+        // Remove old container if exists
+        const old = document.getElementById('relationsFdListsContainer');
+        if (old) old.remove();
+
+        // Find "Original Table" heading
+        const heading = document.querySelector('.section-subheading');
+        if (!heading) return;
+
+        // Create container with same layout as decomposedRelationsContainer
+        const container = document.createElement('div');
+        container.id = 'relationsFdListsContainer';
+        container.style.display = 'flex';
+        container.style.flexWrap = 'wrap';
+        container.style.gap = '8px';
+        container.style.marginTop = '16px';
+        container.style.marginBottom = '16px';
+
+        const groups = Array.from(document.querySelectorAll('.relation-group'));
+        groups.forEach((group, index) => {
+            const meta = relationMetaMap.get(group);
+            if (!meta) return;
+
+            const displayFds = meta.displayFds || [];
+
+            // Create wrapper with exact same sizing as relation-group
+            const wrapper = document.createElement('div');
+            wrapper.className = 'fd-wrapper-group'; // Use class for consistent styling
+            // Copy exact flex properties from .restore-layout .relation-group
+            wrapper.style.flex = '1 1 auto';
+            wrapper.style.maxWidth = 'calc(33.333% - 6px)';
+            wrapper.style.minWidth = '200px';
+            wrapper.style.boxSizing = 'border-box';
+
+            // Create FD panel
+            const panel = document.createElement('div');
+            panel.classList.add('fd-inline-panel');
+            panel.style.margin = '0';
+
+            // Add "Show Transitive Closure FDs" button
+            const showTransitiveBtn = document.createElement('button');
+            showTransitiveBtn.classList.add('small', 'fd-closure-btn-multi');
+            showTransitiveBtn.textContent = 'Show Transitive Closure FDs';
+            showTransitiveBtn.style.marginBottom = '10px';
+            panel.appendChild(showTransitiveBtn);
+
+            const title = document.createElement('h4');
+            title.textContent = `Table ${index + 1} - Functional Dependencies`;
+            panel.appendChild(title);
+
+            const ul = document.createElement('ul');
+            ul.classList.add('fd-pill-list');
+
+            if (displayFds.length) {
+                displayFds.forEach(fd => {
+                    const li = document.createElement('li');
+                    li.textContent = String(fd);
+                    ul.appendChild(li);
+                });
+            } else {
+                const li = document.createElement('li');
+                li.textContent = '-';
+                li.style.background = '#f1f5f9';
+                li.style.color = '#64748b';
+                ul.appendChild(li);
+            }
+
+            panel.appendChild(ul);
+
+            // Get transitive FDs from meta
+            let transitiveFDsList = meta.transitiveFds || [];
+
+            // Attach event listener to the transitive closure button
+            showTransitiveBtn.addEventListener('click', () => {
+                if (showTransitiveBtn.disabled) return;
+                showTransitiveBtn.disabled = true;
+
+                if (transitiveFDsList && transitiveFDsList.length > 0) {
+                    // Add transitive FDs to the list in red
+                    const existingFds = new Set();
+                    Array.from(ul.children).forEach(li => {
+                        existingFds.add(li.textContent.trim());
+                    });
+
+                    transitiveFDsList.forEach(fd => {
+                        if (!existingFds.has(fd)) {
+                            const li = document.createElement('li');
+                            li.textContent = fd;
+                            li.classList.add('inferred');
+                            ul.appendChild(li);
+                        }
+                    });
+                } else {
+                    // No transitive FDs - show message right after the ul
+                    const messageEl = document.createElement('p');
+                    messageEl.textContent = 'This set is transitively closured.';
+                    messageEl.classList.add('transitive-closure-message');
+                    // Force block display and full width to ensure new line
+                    messageEl.style.display = 'block';
+                    messageEl.style.width = '100%';
+                    messageEl.style.clear = 'both';
+                    // Insert after ul
+                    if (ul.nextSibling) {
+                        ul.parentNode.insertBefore(messageEl, ul.nextSibling);
+                    } else {
+                        ul.parentNode.appendChild(messageEl);
+                    }
+                }
+
+                // Remove the button
+                showTransitiveBtn.remove();
+            });
+
+            wrapper.appendChild(panel);
+            container.appendChild(wrapper);
+        });
+
+        // Insert after "Original Table" heading
+        heading.parentNode.insertBefore(container, heading.nextSibling);
     }
 
     function renderRelationBaseWrapper(group, options = {}) {
@@ -932,11 +1107,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const titleEl = wrapper.querySelector('h3');
         if (titleEl && relationTitle) titleEl.textContent = relationTitle;
 
+        // FD list will be displayed separately under "Original Table" heading
+        // No need to add it here anymore
+
         // Set the normal form from backend if available
         if (normalForm) {
             wrapper.dataset.normalForm = normalForm;
         }
-        
+
         // BCNF status check and badge
         const cols = columns;
         const fdsForCheck = fdOriginal.length ? fdOriginal : fdList;
@@ -1117,25 +1295,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if (baseWrapper) {
                 const fdHeading = baseWrapper.querySelector('.fd-list-container h4');
                 if (fdHeading) fdHeading.style.display = 'block';
+
+                // Store FD info in meta for later display
+                const meta = relationMetaMap.get(group);
+                if (meta) {
+                    meta.relationTitle = relationTitle;
+                    meta.displayFds = displayFds;
+
+                    // Get transitive FDs from baseWrapper if available
+                    if (baseWrapper.dataset.transitiveFds) {
+                        try {
+                            meta.transitiveFds = JSON.parse(baseWrapper.dataset.transitiveFds);
+                        } catch (e) {
+                            meta.transitiveFds = [];
+                        }
+                    } else {
+                        meta.transitiveFds = [];
+                    }
+                }
             }
 
             ensureLocalContainer(group);
         }
         console.groupEnd();
 
+        // Create and display FD lists container under "Original Table" heading
+        createRelationsFdListsContainer();
+
         if (origContainer) origContainer.style.display = 'none';
         const fdListContainer = document.getElementById('fdListContainer');
         if (fdListContainer) {
-            fdListContainer.style.display = aggregatedFds.length ? 'block' : 'none';
-            const fdListEl = fdListContainer.querySelector('#fdListUl');
-            if (fdListEl) {
-                fdListEl.innerHTML = '';
-                aggregatedFds.forEach(fd => {
-                    const li = document.createElement('li');
-                    li.textContent = fd;
-                    fdListEl.appendChild(li);
-                });
-            }
+            // Hide global FD list in multi-step normalization (each relation has its own now)
+            fdListContainer.style.display = 'none';
         }
         if (addTableBtn) addTableBtn.style.display = isRestoreHost ? 'none' : 'inline-block';
         if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
@@ -1433,7 +1624,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ljValid = json.ljPreserved === true;
             const dpValid = json.dpPreserved === true;
             const ljMessage = ljValid
-                ? '✓ The decomposition fulfill the lossless-join property.'
+                ? '✓ The decomposition fulfills the lossless-join property.'
                 : 'Error: The decomposition does not fulfill the lossless-join property.';
 
             const dpMessage = dpValid
@@ -1519,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `\u2022 ${result.dpMessage}`
             ].join('\n');
 
-            // success tanımı dependency-preserving olmadan kontrol edilecek
+            // The definition of success will be checked without dependency-preserving
             const success = result.ljValid && coverageResult.valid;
             await Swal.fire({
                 icon: success ? 'info' : 'warning',
@@ -1691,11 +1882,21 @@ document.addEventListener('DOMContentLoaded', () => {
             // Writes the FDs stored (projected) on the wrapper to fd-list
             try { proj = readProjectedFdsFromWrapper(w); } catch (e) { proj = []; }
             fdUl.innerHTML = '';
-            proj.forEach(s => {
+
+            if (proj.length > 0) {
+                proj.forEach(s => {
+                    const li = document.createElement('li');
+                    li.textContent = s;
+                    fdUl.appendChild(li);
+                });
+            } else {
+                // No FDs - show dash
                 const li = document.createElement('li');
-                li.textContent = s;
+                li.textContent = '-';
+                li.style.background = '#f1f5f9';
+                li.style.color = '#64748b';
                 fdUl.appendChild(li);
-            });
+            }
         });
     }
 
@@ -1974,7 +2175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             progressOpen = true;
             Swal.fire({
                 icon: 'info',
-                title: 'Normalization in Progress',
+                title: 'Normalization Progress',
                 html: '<div class="normalization-progress"><ul class="progress-log"></ul></div>',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
@@ -2181,15 +2382,74 @@ document.addEventListener('DOMContentLoaded', () => {
                 const listToUse = (projList && projList.length > 0) ? projList : (readProjectedFdsFromWrapper(w) || []);
                 const normalForm = tr.normalForm || null; // Get normal form from response
 
+                // Get transitive FDs from response
+                const transitiveFDsList = Array.isArray(tr.transitiveFDs) ? tr.transitiveFDs : [];
+
                 if (fdUl) {
                     fdUl.innerHTML = '';
-                    listToUse.forEach(s => {
+                    if (listToUse.length > 0) {
+                        listToUse.forEach(s => {
+                            const li = document.createElement('li');
+                            li.textContent = String(s);
+                            fdUl.appendChild(li);
+                        });
+                    } else {
+                        // No FDs - show dash
                         const li = document.createElement('li');
-                        li.textContent = String(s);
+                        li.textContent = '-';
+                        li.style.background = '#f1f5f9';
+                        li.style.color = '#64748b';
                         fdUl.appendChild(li);
-                    });
+                    }
                 }
                 try { w.dataset.projectedFdsOrig = JSON.stringify(listToUse); } catch (e) {}
+
+                // Store transitive FDs in wrapper's dataset
+                try { w.dataset.transitiveFds = JSON.stringify(transitiveFDsList); } catch (e) {}
+
+                // Show FD container now that FDs are computed
+                if (fdContainer && fdContainer.style.display === 'none') {
+                    fdContainer.style.display = '';
+                }
+
+                // Attach event listener to the transitive closure button
+                const transitiveBtn = fdContainer ? fdContainer.querySelector('.fd-closure-btn-decomposed') : null;
+                if (transitiveBtn && fdUl) {
+                    // Remove any existing listener to prevent duplicates
+                    const newBtn = transitiveBtn.cloneNode(true);
+                    transitiveBtn.parentNode.replaceChild(newBtn, transitiveBtn);
+
+                    newBtn.addEventListener('click', () => {
+                        if (newBtn.disabled) return;
+                        newBtn.disabled = true;
+
+                        if (transitiveFDsList && transitiveFDsList.length > 0) {
+                            // Add transitive FDs to the list
+                            const existingFds = new Set();
+                            Array.from(fdUl.children).forEach(li => {
+                                existingFds.add(li.textContent.trim());
+                            });
+
+                            transitiveFDsList.forEach(fd => {
+                                if (!existingFds.has(fd)) {
+                                    const li = document.createElement('li');
+                                    li.textContent = fd;
+                                    li.classList.add('inferred');
+                                    fdUl.appendChild(li);
+                                }
+                            });
+                        } else {
+                            // No transitive FDs - show message
+                            const messageEl = document.createElement('p');
+                            messageEl.textContent = 'This set is transitively closured.';
+                            messageEl.classList.add('transitive-closure-message');
+                            fdUl.parentElement.appendChild(messageEl);
+                        }
+
+                        // Remove the button
+                        newBtn.remove();
+                    });
+                }
 
                 // Display normal form badges
                 if (normalForm) {
@@ -2314,15 +2574,22 @@ document.addEventListener('DOMContentLoaded', () => {
         let decomposedCols = [];
         let newDecomposedNumber = 1;
         if (!origMode) {
-            //  Only count 'Decomposed Table X' headers
-            const existingDecomposed = document.querySelectorAll('.decomposed-wrapper:not(.orig-as-original) h3');
-            const usedNumbers = new Set();
+            // Determine the scope for counting existing decomposed tables
+            const searchScope = parentContainer || document;
+
+            // Only count 'Decomposed Table X' headers within the scope
+            const existingDecomposed = searchScope.querySelectorAll('.decomposed-wrapper:not(.orig-as-original) h3');
+            let maxNumber = 0;
             existingDecomposed.forEach(h3 => {
-                const m = h3.textContent.match(/\d+/);
-                const num = parseInt(m?.[0] || 0);
-                if (!isNaN(num)) usedNumbers.add(num);
+                const m = h3.textContent.match(/Decomposed Table (\d+)/);
+                const num = parseInt(m?.[1] || 0);
+                if (!isNaN(num) && num > 0 && num > maxNumber) {
+                    maxNumber = num;
+                }
             });
-            while (usedNumbers.has(newDecomposedNumber)) newDecomposedNumber++;
+
+            // Always use the next number after the maximum (sequential numbering)
+            newDecomposedNumber = maxNumber + 1;
         }
 
         const wrapper = document.createElement('div');
@@ -2357,8 +2624,25 @@ document.addEventListener('DOMContentLoaded', () => {
         fdTitle.textContent = 'Functional Dependencies';
         const fdUl = document.createElement('ul');
         fdUl.id = `fdList-${Math.floor(Math.random() * 100000)}`;
+        fdUl.classList.add('fd-pill-list');
+
+        // Add "Show Transitive Closure FDs" button
+        const showTransitiveBtn = document.createElement('button');
+        showTransitiveBtn.classList.add('small', 'fd-closure-btn-decomposed');
+        showTransitiveBtn.textContent = 'Show Transitive Closure FDs';
+        showTransitiveBtn.style.marginBottom = '10px';
+
+        fdContainer.appendChild(showTransitiveBtn);
         fdContainer.appendChild(fdTitle);
         fdContainer.appendChild(fdUl);
+
+        // Hide FD container initially for new decomposed tables
+        // It will be shown after RIC computation
+        // Exception: if origMode or initialFds are provided (restored tables), show it immediately
+        if (!origMode && !initialFds) {
+            fdContainer.style.display = 'none';
+        }
+
         wrapper.appendChild(fdContainer);
 
         wrapper.appendChild(content);
@@ -2789,9 +3073,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!localContainer) return;
                 const newWrapper = createDecomposedTable({ origMode: false, parentContainer: localContainer });
                 if (wrapper.dataset.baseColumns) newWrapper.dataset.baseColumns = wrapper.dataset.baseColumns;
-                const existing = localContainer.querySelectorAll('.decomposed-wrapper');
-                const titleEl = newWrapper.querySelector('h3');
-                if (titleEl) titleEl.textContent = `Decomposed Table ${existing.length}:`;
+                // Title is already correctly set by createDecomposedTable based on existing tables in the container
             });
             footer.appendChild(addTableLocalBtn);
 
@@ -2884,13 +3166,24 @@ document.addEventListener('DOMContentLoaded', () => {
         msgs.innerHTML = '';
 
         const dp = Boolean(resp.dpPreserved);
-        const msgText = dp
+
+        // Create DP status message with different styling based on result
+        const dpStatusDiv = document.createElement('div');
+        dpStatusDiv.className = dp ? 'dp-status dp-status--success' : 'dp-status dp-status--warning';
+
+        const dpIcon = document.createElement('span');
+        dpIcon.className = 'dp-status__icon';
+        dpIcon.textContent = dp ? '✓' : '✗';
+
+        const dpText = document.createElement('span');
+        dpText.className = 'dp-status__text';
+        dpText.textContent = dp
             ? 'The decomposition is dependency-preserving.'
             : 'The decomposition is not dependency-preserving.';
-        const hintDiv = document.createElement('div');
-        hintDiv.className = 'hint hint--info';
-        hintDiv.textContent = msgText;
-        msgs.appendChild(hintDiv);
+
+        dpStatusDiv.appendChild(dpIcon);
+        dpStatusDiv.appendChild(dpText);
+        msgs.appendChild(dpStatusDiv);
         box.style.display = 'block';
     }
 
@@ -3153,4 +3446,3 @@ document.addEventListener('DOMContentLoaded', () => {
         showBcnfTablesBtn.addEventListener('click', handleShowBcnfTables);
     }
 });
-

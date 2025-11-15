@@ -45,12 +45,11 @@
       <div id="fdListContainer" th:if="${fdItems.size()} > 0" class="fd-inline-panel">
 
         <button id="showClosureNormBtn"
-                th:if="${transitiveFdStrings != null and !transitiveFdStrings.isEmpty()}"
                 class="small"
                 style="margin-bottom: 10px;">Show Transitive Closure FDs</button>
 
         <h4>Functional Dependencies</h4>
-        <ul id="fdListUl">
+        <ul id="fdListUl" class="fd-pill-list">
           <li th:each="fd : ${fdItems}"
               th:text="${fd}"
               th:classappend="${fdInferred.contains(fd)} ? 'inferred' : ''">

@@ -17,16 +17,27 @@ document.addEventListener('DOMContentLoaded', () => {
         showClosureBtn.addEventListener('click', () => {
             // Do not run again if already clicked or disabled
             if (showClosureBtn.disabled) return;
-            // Add new FDs to existing list
-            const fragment = document.createDocumentFragment();
-            transitiveFdsArray.forEach(fd => {
-                const li = document.createElement('li');
-                li.textContent = fd;
-                // Red coloring
-                li.classList.add('inferred');
-                fragment.appendChild(li);
-            });
-            fdListUl.appendChild(fragment);
+
+            // Check if there are transitive FDs to show
+            if (transitiveFdsArray && transitiveFdsArray.length > 0) {
+                // Add new FDs to existing list
+                const fragment = document.createDocumentFragment();
+                transitiveFdsArray.forEach(fd => {
+                    const li = document.createElement('li');
+                    // Replace -> with → for consistency
+                    li.textContent = fd.replace(/->/g, '→');
+                    // Red coloring
+                    li.classList.add('inferred');
+                    fragment.appendChild(li);
+                });
+                fdListUl.appendChild(fragment);
+            } else {
+                // No transitive FDs - show message
+                const messageEl = document.createElement('p');
+                messageEl.textContent = 'This set is transitively closured.';
+                messageEl.classList.add('transitive-closure-message');
+                fdListUl.parentElement.appendChild(messageEl);
+            }
 
             // Once the process is complete, completely remove the button from the DOM
             showClosureBtn.remove();

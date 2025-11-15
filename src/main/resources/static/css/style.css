@@ -523,6 +523,90 @@ input[type="file"]::file-selector-button:hover {
 .hint:nth-child(3) { animation-delay: 0.15s; }
 .hint:nth-child(4) { animation-delay: 0.2s; }
 
+/* Dependency Preserving Status */
+.dp-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin: 12px 0;
+    font-size: 0.98rem;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    animation: dp-status-slide-in 0.5s ease-out;
+}
+
+.dp-status:hover {
+    transform: translateX(3px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.dp-status__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 1.3rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.dp-status__text {
+    flex: 1;
+    line-height: 1.5;
+}
+
+/* Success State (DP Preserved) */
+.dp-status--success {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border: 2px solid #34d399;
+    border-left: 5px solid #10b981;
+    color: #065f46;
+}
+
+.dp-status--success .dp-status__icon {
+    background: #10b981;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.dp-status--success:hover {
+    border-left-color: #059669;
+}
+
+/* Warning State (DP Not Preserved) */
+.dp-status--warning {
+    background: linear-gradient(135deg, #fed7aa 0%, #fde68a 100%);
+    border: 2px solid #fb923c;
+    border-left: 5px solid #f97316;
+    color: #92400e;
+}
+
+.dp-status--warning .dp-status__icon {
+    background: #f97316;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
+}
+
+.dp-status--warning:hover {
+    border-left-color: #ea580c;
+}
+
+@keyframes dp-status-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(-15px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 /* Calculation options section (Monte Carlo approximation option) */
 .options {
     background: rgba(255, 255, 255, 0.7);
@@ -737,46 +821,7 @@ input[type="file"]::file-selector-button:hover {
     background: linear-gradient(90deg, #22d3ee, #6366f1);
     box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28);
 }
-/* Style settings for information message about relational information content status in calculation results page*/
-.ric-status {
-    margin: 20px auto;
-    max-width: 800px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 18px 24px;
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
-}
-.ric-status ul {
-    list-style: disc;
-    margin: 0 0 12px 20px;
-    padding: 0;
-    color: #1f2937;
-    line-height: 1.6;
-}
-.ric-status-final {
-    font-weight: 600;
-    color: #2563eb;
-}
-.status-heading {
-    margin: 0 0 16px;
-    font-size: 1.35rem;
-    font-weight: 600;
-    color: #1d4ed8;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-.status-heading::before {
-    content: "";
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #22d3ee, #3b82f6);
-    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.3);
-}
+
 /* Results table */
 #results {
     margin-top: 40px;
@@ -851,7 +896,9 @@ input[type="file"]::file-selector-button:hover {
     margin: 10px 0 0 0;
     padding: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row; /* changed from column to row for horizontal layout */
+    flex-wrap: wrap;     /* allow wrapping to next line on small screens */
+    justify-content: center;
     align-items: center;
     gap: 10px;
 }
@@ -862,6 +909,9 @@ input[type="file"]::file-selector-button:hover {
     padding: 6px 14px;
     font-weight: 600;
     color: #1f2937;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap; /* keep LHS->RHS FD on one line */
 }
 
 .fd-pill-list li.inferred {
@@ -869,10 +919,31 @@ input[type="file"]::file-selector-button:hover {
     color: #b91c1c;
 }
 
+
+/* Transitive closure message */
+.transitive-closure-message {
+    display: block !important;
+    width: 100% !important;
+    margin: 10px 0;
+    padding: 10px;
+    background: #d1fae5;
+    border-radius: 6px;
+    color: #065f46;
+    font-weight: 600;
+    text-align: center;
+    clear: both;
+}
+
 .fd-closure-btn {
     margin: 16px auto 0 auto;
     display: inline-block;
 }
+
+.fd-closure-btn-decomposed {
+    margin: 0 0 10px 0;
+    display: inline-block;
+}
+
 .tables-side-by-side .table-wrapper {
     flex: 0 1 340px;
     text-align: center;
@@ -1482,9 +1553,6 @@ input[type="file"]::file-selector-button:hover {
     padding: 6px 10px;
     font-size: 0.88rem;
 }
-#decomposedTablesContainer .decomposed-wrapper.orig-as-original {
-    margin: 1.5rem;
-}
 /* BCNF tables page styles */
 .bcnf-summary-container {
     max-width: 1100px;
@@ -1758,25 +1826,34 @@ input[type="file"]::file-selector-button:hover {
 .restore-layout {
     display: flex;
     flex-wrap: wrap;
-    gap: 20px;
+    gap: 8px !important;
     align-items: flex-start;
     justify-content: flex-start;
 }
 
 .restore-layout .relation-group {
-    flex: 1 1 620px;
-    max-width: 48%;
-    min-width: 520px;
+    flex: 1 1 auto;
+    max-width: calc(33.333% - 6px);
+    min-width: 200px;
     display: flex;
     flex-direction: column;
     gap: 16px;
     padding-bottom: 24px;
+    box-sizing: border-box;
+}
+
+/* FD wrapper must match relation-group sizing exactly */
+#relationsFdListsContainer .fd-wrapper-group {
+    flex: 1 1 auto;
+    max-width: calc(33.333% - 6px);
+    min-width: 200px;
+    box-sizing: border-box;
 }
 
 .restore-layout .decomposed-wrapper {
-    flex: 0 0 calc(50% - 24px);
+    flex: 1 1 100%;
     min-width: 320px;
-    max-width: 520px;
+    max-width: 100%;
     margin: 0;
 }
 
@@ -1792,7 +1869,7 @@ input[type="file"]::file-selector-button:hover {
 .restore-layout .local-decomposition-group {
     flex: 1 1 100%;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 20px;
     margin-top: 12px;
 }
@@ -1910,12 +1987,3 @@ input[type="file"]::file-selector-button:hover {
 .normal-form-badge .check-icon {
     font-size: 0.9em;
 }
-
-
-
-
-
-
-
-
-
