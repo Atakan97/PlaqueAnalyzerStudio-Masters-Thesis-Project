@@ -117,7 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
             : [];
         fdList.forEach(fd => {
             const li = document.createElement('li');
-            li.textContent = fd;
+            // Replace -> with → for consistency
+            li.textContent = fd.replace(/->/g, '→');
             ul.appendChild(li);
         });
         if (fdList.length === 0) {

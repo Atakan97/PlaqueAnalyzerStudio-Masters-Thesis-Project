@@ -24,6 +24,30 @@
       method="post"
       enctype="multipart/form-data">
 
+  <div class="options">
+    <div class="options-glass-grid">
+      <label class="toggle-switch">
+        <input type="checkbox" id="mcCheckbox" name="monteCarlo" />
+        <span class="toggle-slider"></span>
+      </label>
+      <div class="toggle-label-container">
+        <div class="toggle-label-main">Monte Carlo Approximation</div>
+        <div class="toggle-label-sub">Enable Monte Carlo Approximation for faster computation</div>
+      </div>
+    </div>
+    <div class="glass-input-section">
+      <div class="glass-input-wrapper">
+        <label for="samples">Sample Size:</label>
+        <input type="number" id="samples" name="samples" value="100000" disabled />
+      </div>
+    </div>
+  </div>
+
+  <div class="compute-btn-wrapper">
+    <button type="submit" id="computeBtn" class="compute-btn pill">Compute Plaque</button>
+    <p class="hint compute-hint">Runs the relational information content calculation.</p>
+  </div>
+
   <div class="input-container">
     <div class="input-column">
       <h2 class="section-heading">Input Data</h2>
@@ -75,39 +99,18 @@
       </div>
     </div>
   </div>
-  <div class="options">
-    <div class="options-glass-grid">
-      <label class="toggle-switch">
-        <input type="checkbox" id="mcCheckbox" name="monteCarlo" />
-        <span class="toggle-slider"></span>
-      </label>
-      <div class="toggle-label-container">
-        <div class="toggle-label-main">Monte Carlo Approximation</div>
-        <div class="toggle-label-sub">Enable Monte Carlo Approximation for faster computation</div>
-      </div>
-    </div>
-    <div class="glass-input-section">
-      <div class="glass-input-wrapper">
-        <label for="samples">Sample Size:</label>
-        <input type="number" id="samples" name="samples" value="100000" disabled />
-      </div>
-    </div>
-  </div>
 
   <input type="hidden" name="manualData" id="manualData" />
   <input type="hidden" name="fds"        id="fdsInput" />
-
-  <div class="compute-btn-wrapper">
-    <button type="submit" id="computeBtn" class="compute-btn pill">Compute Plaque</button>
-    <p class="hint compute-hint">Runs the relational information content calculation.</p>
-  </div>
 </form>
 
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script th:src="@{/js/main.js}"></script>
 <script th:inline="javascript">
   /*<![CDATA[*/
   // Retrieve data to restore from Thymeleaf
   const restoredInputData = /*[[${restoredInputData}]]*/ null;
+  const restoredInputDataJson = /*[[${restoredInputDataJson}]]*/ null;
   const restoredFdList = /*[[${restoredFdList}]]*/ null;
   /*]]>*/
 
@@ -116,8 +119,27 @@
     let dataRestored = false;
     let fdRestored = false;
 
-    // Restore data and FDs
-    if (restoredInputData && restoredInputData.trim() !== "") {
+    // Debug logging for restoration
+    console.log('[calc.html] Restoration check - restoredInputDataJson:', restoredInputDataJson ? restoredInputDataJson.substring(0, 200) + '...' : 'null');
+    console.log('[calc.html] Restoration check - restoredInputData:', restoredInputData ? restoredInputData.substring(0, 200) + '...' : 'null');
+
+    // Restore data and FDs - prefer JSON format if available
+    if (restoredInputDataJson && restoredInputDataJson.trim() !== "" && restoredInputDataJson !== "null") {
+      try {
+        const parsedData = JSON.parse(restoredInputDataJson);
+        console.log('[calc.html] Parsed JSON data rows:', parsedData.length, 'First row columns:', parsedData[0]?.length);
+        if (Array.isArray(parsedData) && parsedData.length > 0) {
+          restoreManualTableFromJson(parsedData);
+          dataRestored = true;
+          console.log('[calc.html] Data restored from JSON format successfully');
+        }
+      } catch (e) {
+        console.error('[calc.html] Failed to parse restoredInputDataJson:', e);
+      }
+    }
+    // Fallback to legacy format if JSON not available
+    if (!dataRestored && restoredInputData && restoredInputData.trim() !== "") {
+      console.log('[calc.html] Falling back to legacy format restoration');
       restoreManualTable(restoredInputData);
       dataRestored = true;
     }
@@ -160,16 +182,25 @@
   // Restoration functions with full DOM recreation logic
   // Manual Data Table Filling Function
   function restoreManualTable(dataString) {
-    const rows = dataString.split(';');
-    if (rows.length < 1) return;
+    // Parse using PapaParse to handle quoted values with commas
+    const rowStrings = dataString.split(';');
+    if (rowStrings.length < 1) return;
+
+    // Parse each row using PapaParse
+    const parsedRows = rowStrings.map(rowStr => {
+      const parsed = Papa.parse(rowStr, { header: false });
+      return parsed.data && parsed.data[0] ? parsed.data[0] : [];
+    }).filter(row => row.length > 0);
+
+    if (parsedRows.length < 1) return;
 
     const manualDataTable = document.getElementById('manualDataTable');
     const tbody = manualDataTable.querySelector('tbody');
     const thead = manualDataTable.querySelector('thead');
     const columnCountInput = document.getElementById('columnCountInput');
 
-    // Update number of columns
-    const columnCount = rows[0].split(',').length;
+    // Update number of columns based on first row
+    const columnCount = parsedRows[0].length;
     if (columnCountInput) {
       columnCountInput.value = columnCount;
     }
@@ -194,17 +225,69 @@
       tbody.removeChild(tbody.firstChild);
     }
 
-    // Data rows (Skip header row)
-    for (let i = 0; i < rows.length; i++) {
-      const rowString = rows[i];
+    // Data rows
+    for (let i = 0; i < parsedRows.length; i++) {
+      const cells = parsedRows[i];
       const newRow = tbody.insertRow();
-      const cells = rowString.split(',');
 
       cells.forEach((cellValue) => {
         const newCell = newRow.insertCell();
         newCell.setAttribute('contenteditable', 'true');
-        newCell.textContent = cellValue;
+        newCell.textContent = cellValue || '';
       });
+
+      // Add row delete button
+      const deleteCell = newRow.insertCell();
+      deleteCell.innerHTML = '<button type="button" class="delManualRow">×</button>';
+    }
+  }
+
+  // JSON-based restoration function (avoids semicolon splitting issues)
+  function restoreManualTableFromJson(parsedData) {
+    if (!Array.isArray(parsedData) || parsedData.length < 1) return;
+
+    const manualDataTable = document.getElementById('manualDataTable');
+    const tbody = manualDataTable.querySelector('tbody');
+    const thead = manualDataTable.querySelector('thead');
+    const columnCountInput = document.getElementById('columnCountInput');
+
+    // Update number of columns based on first row
+    const columnCount = parsedData[0].length;
+    if (columnCountInput) {
+      columnCountInput.value = columnCount;
+    }
+
+    // Rebuild header
+    if (thead) {
+      thead.innerHTML = '';
+      const headerRow = thead.insertRow();
+
+      for (let i = 0; i < columnCount; i++) {
+        const th = document.createElement('th');
+        th.textContent = i + 1; // 1, 2, 3...
+        headerRow.appendChild(th);
+      }
+      const delTh = document.createElement('th');
+      delTh.textContent = 'Del';
+      headerRow.appendChild(delTh);
+    }
+
+    // Fill Body
+    while(tbody.firstChild) {
+      tbody.removeChild(tbody.firstChild);
+    }
+
+    // Data rows - directly use the parsed JSON array
+    for (let i = 0; i < parsedData.length; i++) {
+      const cells = parsedData[i];
+      const newRow = tbody.insertRow();
+
+      // Ensure each row has the expected number of columns
+      for (let j = 0; j < columnCount; j++) {
+        const newCell = newRow.insertCell();
+        newCell.setAttribute('contenteditable', 'true');
+        newCell.textContent = (cells && cells[j]) ? cells[j] : '';
+      }
 
       // Add row delete button
       const deleteCell = newRow.insertCell();

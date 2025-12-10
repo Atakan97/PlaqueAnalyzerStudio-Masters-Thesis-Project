@@ -96,6 +96,41 @@ document.addEventListener('DOMContentLoaded', function() {
         deleteCell.innerHTML = `<button class="delManualRow">×</button>`;
     }
 
+    // Function to detect and remove duplicate tuples from manual data table
+    function detectAndRemoveDuplicateTuples() {
+        const tbody = manualDataTable.querySelector('tbody');
+        if (!tbody) return 0;
+
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const seenTuples = new Set();
+        const rowsToRemove = [];
+
+        rows.forEach(row => {
+            const cells = Array.from(row.querySelectorAll('td[contenteditable]'));
+            const tupleContent = cells.map(cell => cell.textContent.trim()).join(',');
+
+            // Skip completely empty rows
+            if (tupleContent.replace(/,/g, '').trim() === '') {
+                return;
+            }
+
+            // Normalize the tuple (remove extra spaces, standardize format)
+            const normalizedTuple = tupleContent.toLowerCase().replace(/\s+/g, '');
+
+            if (seenTuples.has(normalizedTuple)) {
+                // This is a duplicate
+                rowsToRemove.push(row);
+            } else {
+                seenTuples.add(normalizedTuple);
+            }
+        });
+
+        // Remove duplicate rows
+        rowsToRemove.forEach(row => row.remove());
+
+        return rowsToRemove.length;
+    }
+
     // Update the table when the "Update Table" button is clicked
     if (updateColumnsBtn && columnCountInput) {
         updateColumnsBtn.addEventListener('click', () => {
@@ -130,60 +165,78 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = evt => {
-                const lines = evt.target.result
-                    .split(/\r?\n/)
-                    .map(l => l.trim())
-                    .filter(l => l !== '');
-
-                fullCsvData = lines;
-
-                // Manually fill table with CSV data
-                populateManualTableFromCsv(fullCsvData);
-                // Update the manualData hidden input with CSV data
-                document.getElementById('manualData').value = fullCsvData.join(';');
+                const text = evt.target.result;
+                // Use delimiter auto-detection to support both CSV (comma) and TSV (tab) files
+                const parsed = Papa.parse(text, {
+                    skipEmptyLines: true,
+                    delimiter: "",  // Empty string triggers auto-detection
+                    delimitersToGuess: [',', '\t', ';', '|']  // Common delimiters to check
+                });
+                if (parsed.errors?.length) {
+                    console.error('CSV parse errors', parsed.errors);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'CSV could not read',
+                        text: parsed.errors[0].message,
+                        confirmButtonText: 'Close'
+                    });
+                    return;
+                }
+                const rows = parsed.data;
+                fullCsvData = rows;
+                populateManualTableFromParsedCsv(rows);
+                const duplicateCount = detectAndRemoveDuplicateTuples();
+                syncManualDataFromTable();
+                console.info('Duplicate rows removed:', duplicateCount);
             };
             reader.readAsText(file);
         });
     }
 
-    // Takes CSV rows and fills the table manually
-    function populateManualTableFromCsv(csvLines) {
-        if (!csvLines || csvLines.length === 0) return;
-
-        // Determine the number of columns
-        const columnCount = csvLines[0].split(',').length;
+    function populateManualTableFromParsedCsv(rows) {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        const columnCount = rows[0].length;
         const columnCountInput = document.getElementById('columnCountInput');
-
-        // Update number of columns (regenerates headers)
-        if (columnCountInput) {
-            columnCountInput.value = columnCount;
-        }
+        if (columnCountInput) columnCountInput.value = columnCount;
         updateManualTable(columnCount);
-
-        // Fill table body with CSV data
         const tbody = manualDataTable.querySelector('tbody');
         if (!tbody) return;
-
-        // Delete the default blank row that updateManualTable adds
         tbody.innerHTML = '';
-
-        csvLines.forEach(rowString => {
+        rows.forEach(rowValues => {
             const newRow = tbody.insertRow();
-            const cells = rowString.split(',');
-
-            // Add only the specified number of cells in the column
             for (let i = 0; i < columnCount; i++) {
-                const cellValue = cells[i] !== undefined ? cells[i] : '';
                 const newCell = newRow.insertCell();
                 newCell.setAttribute('contenteditable', 'true');
-                newCell.textContent = cellValue;
+                newCell.textContent = rowValues[i] ?? '';
             }
-
-            // Add row delete button
             const deleteCell = newRow.insertCell();
             deleteCell.innerHTML = '<button type="button" class="delManualRow">×</button>';
         });
     }
+
+    function syncManualDataFromTable() {
+        const manualRows = Array.from(document.querySelectorAll('#manualDataTable tbody tr'));
+        // Serialize rows - quote values that contain comma or semicolon
+        const rowsData = manualRows.map(row => {
+            const cells = Array.from(row.querySelectorAll('td[contenteditable]'));
+            return cells.map(cell => cell.textContent.trim());
+        }).filter(row => row.some(cell => cell !== ''));
+
+        const serializedRows = rowsData.map(row => {
+            const quotedCells = row.map(cell => {
+                // If cell contains comma, semicolon, or double quote, wrap in quotes and escape internal quotes
+                if (cell.includes(',') || cell.includes(';') || cell.includes('"')) {
+                    const escaped = cell.replace(/"/g, '""');
+                    return `"${escaped}"`;
+                }
+                return cell;
+            });
+            return quotedCells.join(',');
+        });
+        const serialized = serializedRows.join(';');
+        document.getElementById('manualData').value = serialized;
+    }
+
     // Take CSV rows and fill manual FD table
     function populateFdTableFromCsv(fdLines) {
         const fdTableBody = document.querySelector('#fdTable tbody');
@@ -266,17 +319,37 @@ document.addEventListener('DOMContentLoaded', function() {
     const computeBtn = document.getElementById('computeBtn');
 
     form.addEventListener('submit', e => {
+        // Stop form submit by default
+        e.preventDefault();
+
+        // Detect and remove duplicate tuples before processing
+        const duplicateCount = detectAndRemoveDuplicateTuples();
+
         // Collecting CSV file or manual data
         let manualContent = '';
 
         // Always read from the table as the manual table is the only and editable data source
         const manualRows = Array.from(document.querySelectorAll('#manualDataTable tbody tr'));
-        manualContent = manualRows.map(row => {
-            // Only get contenteditable tds
+        // Use PapaParse to properly serialize rows with values containing commas or semicolons
+        const rowsData = manualRows.map(row => {
             const cells = Array.from(row.querySelectorAll('td[contenteditable]'));
-            return cells.map(cell => cell.textContent.trim()).join(',');
-            // Filter empty lines
-        }).filter(line => line.replace(/,/g, '').trim() !== '').join(';');
+            return cells.map(cell => cell.textContent.trim());
+        }).filter(row => row.some(cell => cell !== ''));
+
+        // Serialize each row - quote values that contain comma or semicolon
+        const serializedRows = rowsData.map((row, rowIndex) => {
+            const quotedCells = row.map((cell, cellIndex) => {
+                // If cell contains comma, semicolon, or double quote, wrap in quotes and escape internal quotes
+                if (cell.includes(',') || cell.includes(';') || cell.includes('"')) {
+                    // Escape existing double quotes by doubling them
+                    const escaped = cell.replace(/"/g, '""');
+                    return `"${escaped}"`;
+                }
+                return cell;
+            });
+            return quotedCells.join(',');
+        });
+        manualContent = serializedRows.join(';');
         document.getElementById('manualData').value = manualContent;
 
         // Collecting functional dependencies
@@ -289,8 +362,6 @@ document.addEventListener('DOMContentLoaded', function() {
             .filter(s => s);
         document.getElementById('fdsInput').value = fdLines.join(';');
 
-        // Stop form submit by default
-        e.preventDefault();
 
         const finalDataString = manualContent.trim();
         const finalFdsString = fdLines.join(';').trim();
@@ -324,12 +395,14 @@ document.addEventListener('DOMContentLoaded', function() {
             manualData: finalDataString,
             fds: finalFdsString,
             monteCarloSelected: !!(document.getElementById('mcCheckbox')?.checked),
-            samples: document.getElementById('samples')?.value || '100000'
+            samples: document.getElementById('samples')?.value || '100000',
+            duplicatesRemoved: duplicateCount
         });
     });
 
-    function startLiveComputation({ manualData, fds, monteCarloSelected, samples }) {
+    function startLiveComputation({ manualData, fds, monteCarloSelected, samples, duplicatesRemoved }) {
         if (computeBtn) computeBtn.disabled = true;
+
 
         let swalInstance;
         const progressItems = [];
@@ -378,14 +451,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
 
-        const params = new URLSearchParams();
-        params.set('manualData', manualData);
-        if (fds) params.set('fds', fds);
-        params.set('monteCarlo', monteCarloSelected ? 'true' : 'false');
-        params.set('samples', samples || '100000');
-
-        const source = new EventSource(`/compute/stream?${params.toString()}`);
-
         const appendStatus = (message) => {
             if (!message) return;
             progressItems.push(message);
@@ -418,65 +483,108 @@ document.addEventListener('DOMContentLoaded', function() {
             }, waitMs);
         };
 
-        source.addEventListener('progress', event => {
-            try {
-                const payload = JSON.parse(event.data);
-                appendStatus(payload.message);
-            } catch (err) {
-                appendStatus(event.data);
-            }
-        });
+        // Build init params and request a short-lived token to avoid huge EventSource URLs
+        const initParams = new URLSearchParams();
+        initParams.set('manualData', manualData);
+        if (fds) initParams.set('fds', fds);
+        initParams.set('monteCarlo', monteCarloSelected ? 'true' : 'false');
+        initParams.set('samples', samples || '100000');
+        initParams.set('duplicatesRemoved', duplicatesRemoved || '0');
 
-        source.addEventListener('complete', event => {
-            source.close();
-            if (computeBtn) computeBtn.disabled = false;
-            let data;
-            try {
-                data = JSON.parse(event.data);
-            } catch (err) {
-                data = {};
-            }
-            const redirectUrl = data && data.redirectUrl ? data.redirectUrl : '/calc-results';
-            showCompletion(redirectUrl);
-        });
+        fetch('/compute/stream-init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: initParams.toString()
+        })
+        .then(resp => {
+            if (!resp.ok) throw new Error('Failed to initialize computation.');
+            return resp.json();
+        })
+        .then(data => {
+            const token = data && data.token;
+            if (!token) throw new Error('Computation token is missing.');
 
-        source.addEventListener('error', event => {
-            let message = 'Unexpected error during computation.';
-            try {
-                const payload = JSON.parse(event.data);
-                if (payload && payload.message) message = payload.message;
-            } catch (err) {
-                if (event.data) message = event.data;
-            }
-            if (Swal.isVisible()) {
+            const source = new EventSource(`/compute/stream?token=${encodeURIComponent(token)}`);
+
+            source.onopen = () => {
+                // Connection opened
+            };
+            source.addEventListener('progress', event => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    appendStatus(payload.message);
+                } catch (err) {
+                    appendStatus(event.data);
+                }
+            });
+
+            source.addEventListener('complete', event => {
+                source.close();
+                if (computeBtn) computeBtn.disabled = false;
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                } catch (err) {
+                    data = {};
+                }
+                const redirectUrl = data && data.redirectUrl ? data.redirectUrl : '/calc-results';
+                showCompletion(redirectUrl);
+            });
+
+            source.addEventListener('error', event => {
+                let message = 'Unexpected error during computation.';
+                try {
+                    const payload = JSON.parse(event.data);
+                    if (payload && payload.message) message = payload.message;
+                } catch (err) {
+                    if (event.data) message = event.data;
+                }
+                if (Swal.isVisible()) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Computation failed',
+                        text: message,
+                        confirmButtonText: 'Close'
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Computation failed',
+                        text: message,
+                        confirmButtonText: 'Close'
+                    });
+                }
+                if (computeBtn) computeBtn.disabled = false;
+                source.close();
+            });
+
+            source.onerror = (event) => {
+                // Only show error if not already closed by complete event
+                if (source.readyState === EventSource.CLOSED) {
+                    // Check if we should ignore this (might be expected after complete)
+                    if (Swal.isVisible() && progressItems.some(item => item.includes('Completed'))) {
+                        return;
+                    }
+                }
+
                 Swal.fire({
                     icon: 'error',
-                    title: 'Computation failed',
-                    text: message,
+                    title: 'Connection lost',
+                    text: 'Connection lost while receiving computation updates. Please check if the server is running.',
                     confirmButtonText: 'Close'
                 });
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Computation failed',
-                    text: message,
-                    confirmButtonText: 'Close'
-                });
-            }
-            if (computeBtn) computeBtn.disabled = false;
-            source.close();
-        });
-
-        source.onerror = () => {
+                if (computeBtn) computeBtn.disabled = false;
+                source.close();
+            };
+        })
+        .catch(err => {
             Swal.fire({
                 icon: 'error',
-                title: 'Connection lost',
-                text: 'Connection lost while receiving computation updates.',
+                title: 'Initialization failed',
+                text: err && err.message ? err.message : 'Unable to start computation.',
                 confirmButtonText: 'Close'
             });
             if (computeBtn) computeBtn.disabled = false;
-            source.close();
-        };
+        });
     }
 });
-

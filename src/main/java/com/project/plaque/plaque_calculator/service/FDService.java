@@ -83,7 +83,7 @@ public class FDService {
 		}
 
 		// Normalize arrows
-		fdStr = fdStr.replace("→", "->").replace("\u2192", "->");
+		fdStr = fdStr.replace("→", "->");
 
 		List<FD> result = new ArrayList<>();
 		for (String part : fdStr.split(";")) {
@@ -123,7 +123,7 @@ public class FDService {
 		}
 
 		// Normalize arrows
-		fdStr = fdStr.replace("→", "->").replace("\u2192", "->");
+		fdStr = fdStr.replace("→", "->");
 
 		List<FD> result = new ArrayList<>();
 		for (String part : fdStr.split(";")) {
@@ -179,5 +179,37 @@ public class FDService {
 		}
 
 		return attrs;
+	}
+
+	/**
+	 * Parse display format FD strings (e.g., "1,2,3→5") into FD objects.
+	 * Keeps the original format without converting indices to attribute names.
+	 * Used for calculating transitive FDs while preserving index-based display format.
+	 *
+	 * @param fdStrings List of FD strings in display format
+	 * @return List of FD objects
+	 */
+	public List<FD> parseFdsFromDisplayStrings(List<String> fdStrings) {
+		if (fdStrings == null || fdStrings.isEmpty()) {
+			return Collections.emptyList();
+		}
+		List<FD> result = new ArrayList<>();
+		for (String fdStr : fdStrings) {
+			String normalized = fdStr.replace("→", "->");
+			String[] sides = normalized.split("->");
+			if (sides.length != 2) continue;
+			Set<String> lhs = Arrays.stream(sides[0].split(","))
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.collect(Collectors.toCollection(LinkedHashSet::new));
+			Set<String> rhs = Arrays.stream(sides[1].split(","))
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.collect(Collectors.toCollection(LinkedHashSet::new));
+			if (!lhs.isEmpty() && !rhs.isEmpty()) {
+				result.add(new FD(lhs, rhs));
+			}
+		}
+		return result;
 	}
 }

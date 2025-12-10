@@ -7,13 +7,21 @@
 </head>
 <body>
 
-<form th:action="@{/calc}" method="get" class="return-to-input-form">
-  <input type="hidden" name="inputData" th:value="${inputData}" />
+<form th:action="@{/calc}" method="post" class="return-to-input-form">
+  <input type="hidden" name="inputDataJson" id="inputDataJsonField" />
   <input type="hidden" name="fdList" th:value="${fdList}" />
   <input type="hidden" name="monteCarlo" th:value="${monteCarloSelected}" />
   <input type="hidden" name="samples" th:value="${monteCarloSamples}" />
   <button type="submit" class="button pill">← Return to Input</button>
 </form>
+
+<script th:inline="javascript">
+  // Store JSON data in JavaScript variable to avoid HTML encoding issues
+  (function() {
+    const inputDataJson = /*[[${inputDataJson}]]*/ '[]';
+    document.getElementById('inputDataJsonField').value = inputDataJson;
+  })();
+</script>
 
 <h1 class="results-heading">Calculation Results</h1>
 
@@ -29,18 +37,18 @@
   </div>
 
   <div class="tables-side-by-side">
-    <div th:if="${inputData != null}" class="table-wrapper">
+    <div th:if="${parsedInputData != null and !parsedInputData.isEmpty()}" class="table-wrapper">
       <h3 class="result-section-title">Input Data:</h3>
       <table class="data-grid">
         <thead>
         <tr>
-          <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
+          <th th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
               th:text="${i}"></th>
         </tr>
         </thead>
         <tbody>
-        <tr th:each="row : ${inputData.split(';')}">
-          <td th:each="cell : ${row.split(',')}"
+        <tr th:each="row : ${parsedInputData}">
+          <td th:each="cell : ${row}"
               th:text="${cell}">val</td>
         </tr>
         </tbody>
@@ -53,13 +61,14 @@
       <table id="initialCalcTable" class="data-grid">
         <thead>
         <tr>
-          <th th:each="i : ${#numbers.sequence(1, inputData.split(';')[0].split(',').length)}"
+          <th th:if="${parsedInputData != null and !parsedInputData.isEmpty()}"
+              th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
               th:text="${i}"></th>
         </tr>
         </thead>
         <tbody>
-        <tr th:each="row, rsStat : ${inputData.split(';')}">
-          <td th:each="cell, csStat : ${row.split(',')}"
+        <tr th:each="row, rsStat : ${parsedInputData}">
+          <td th:each="cell, csStat : ${row}"
               th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
               th:text="${cell}">val</td>
         </tr>
@@ -101,6 +110,8 @@
     window.ricMatrix = /*[[${ricMatrix}]]*/ [];
     // Moving transitive closure FDs to JavaScript
     window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
+    // Number of duplicate tuples removed
+    window.duplicatesRemoved = /*[[${duplicatesRemoved}]]*/ 0;
     /*]]>*/
   </script>
   <script th:src="@{/js/results.js}"></script>

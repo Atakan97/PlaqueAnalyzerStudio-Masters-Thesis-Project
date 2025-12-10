@@ -5,15 +5,12 @@ import com.project.plaque.plaque_calculator.model.FD;
 import com.project.plaque.plaque_calculator.service.FDService;
 import com.project.plaque.plaque_calculator.service.NormalFormChecker;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Controller
 public class PageController {
@@ -45,13 +42,47 @@ public class PageController {
 	@GetMapping("/calc")
 	public String getCalcPage(
 			@RequestParam(value = "inputData", required = false) String inputData,
+			@RequestParam(value = "inputDataJson", required = false) String inputDataJson,
 			@RequestParam(value = "fdList", required = false) String fdList,
 			@RequestParam(value = "monteCarlo", required = false) String monteCarlo,
 			@RequestParam(value = "samples", required = false) String samples,
 			Model model) {
 
-		// If it comes from the results page and has data/FD information, add it to the model
-		if (inputData != null && !inputData.isEmpty()) {
+		// Prefer JSON format for restoration (avoids semicolon splitting issues)
+		if (inputDataJson != null && !inputDataJson.isEmpty()) {
+			model.addAttribute("restoredInputDataJson", inputDataJson);
+		} else if (inputData != null && !inputData.isEmpty()) {
+			// Fallback to legacy format
+			model.addAttribute("restoredInputData", inputData);
+		}
+		if (fdList != null && !fdList.isEmpty()) {
+			model.addAttribute("restoredFdList", fdList);
+		}
+
+		if (monteCarlo != null) {
+			model.addAttribute("restoredMonteCarlo", monteCarlo);
+		}
+		if (samples != null) {
+			model.addAttribute("restoredSamples", samples);
+		}
+
+		return "calc";
+	}
+
+	@org.springframework.web.bind.annotation.PostMapping("/calc")
+	public String postCalcPage(
+			@RequestParam(value = "inputData", required = false) String inputData,
+			@RequestParam(value = "inputDataJson", required = false) String inputDataJson,
+			@RequestParam(value = "fdList", required = false) String fdList,
+			@RequestParam(value = "monteCarlo", required = false) String monteCarlo,
+			@RequestParam(value = "samples", required = false) String samples,
+			Model model) {
+
+		// Prefer JSON format for restoration (avoids semicolon splitting issues)
+		if (inputDataJson != null && !inputDataJson.isEmpty()) {
+			model.addAttribute("restoredInputDataJson", inputDataJson);
+		} else if (inputData != null && !inputData.isEmpty()) {
+			// Fallback to legacy format
 			model.addAttribute("restoredInputData", inputData);
 		}
 		if (fdList != null && !fdList.isEmpty()) {
@@ -86,6 +117,12 @@ public class PageController {
 		List<String> allFdStrings = (List<String>) session.getAttribute("calcResultsAllFdStrings");
 		@SuppressWarnings("unchecked")
 		List<String> transitiveFds = (List<String>) session.getAttribute("calcResultsTransitiveFds");
+		Integer duplicatesRemoved = (Integer) session.getAttribute("duplicatesRemoved");
+
+		// Get properly parsed table data from session (parsed by CsvParsingUtil)
+		String initialCalcTableJson = (String) session.getAttribute("initialCalcTableJson");
+		@SuppressWarnings("unchecked")
+		List<List<String>> parsedInputData = (List<List<String>>) session.getAttribute("originalTuples");
 
 		if (ricMatrix == null || inputData == null) {
 			return "redirect:/calc";
@@ -95,6 +132,9 @@ public class PageController {
 		model.addAttribute("ricColCount", ricColCount != null ? ricColCount : 0);
 		model.addAttribute("ricJson", ricJson != null ? ricJson : "[]");
 		model.addAttribute("inputData", inputData);
+		// Add JSON format for proper restoration in calc.html (avoids semicolon splitting issues)
+		String inputDataJson = (String) session.getAttribute("calcResultsInputDataJson");
+		model.addAttribute("inputDataJson", inputDataJson != null ? inputDataJson : "[]");
 		model.addAttribute("fdList", fdList != null ? fdList : "");
 		model.addAttribute("ricSteps", ricSteps != null ? ricSteps : List.of());
 		model.addAttribute("ricFinalStrategy", ricFinalStrategy);
@@ -102,6 +142,10 @@ public class PageController {
 		model.addAttribute("monteCarloSamples", monteCarloSamples != null ? monteCarloSamples : 100000);
 		model.addAttribute("allFdStringsToShow", allFdStrings != null ? allFdStrings : List.of());
 		model.addAttribute("transitiveFdStrings", transitiveFds != null ? transitiveFds : List.of());
+		model.addAttribute("duplicatesRemoved", duplicatesRemoved != null ? duplicatesRemoved : 0);
+		// Add properly parsed input data for display
+		model.addAttribute("parsedInputData", parsedInputData != null ? parsedInputData : List.of());
+		model.addAttribute("initialCalcTableJson", initialCalcTableJson != null ? initialCalcTableJson : "[]");
 
 		return "calc-results";
 	}
@@ -185,52 +229,25 @@ public class PageController {
 			populateInitialNormalization(session, model);
 		}
 
-		String fdList = (String) session.getAttribute("fdList");
-		Set<String> userFds = new LinkedHashSet<>();
-		if (fdList != null && !fdList.isBlank()) {
-			String[] parts = fdList.split("[;\\r\\n]+");
-			for (String p : parts) {
-				String t = p == null ? "" : p.trim();
-				if (t.isEmpty()) continue;
-				t = t.replace('→', '-').replaceAll("-+>", "->");
-				t = t.replaceAll("\\s*,\\s*", ",");
-				userFds.add(t);
-			}
-		}
-
-		// Get the original FD list from session and calculate only the transitive ones
+		// Get the original FD strings for display (in index format like "1,2,3→5")
 		@SuppressWarnings("unchecked")
-		List<FD> originalFDs = (List<FD>) session.getAttribute("originalFDs");
-		if (originalFDs == null) {
-			originalFDs = new ArrayList<>(); // Security measure
+		List<String> originalFdStringsForDisplay = (List<String>) session.getAttribute("originalFdStringsForDisplay");
+		if (originalFdStringsForDisplay == null) {
+			originalFdStringsForDisplay = new ArrayList<>();
 		}
 
-		List<FD> transitiveFDs = fdService.findTransitiveFDs(originalFDs);
+		// Get transitive FD strings for display (in index format)
+		@SuppressWarnings("unchecked")
+		List<String> transitiveFdStringsForDisplay = (List<String>) session.getAttribute("transitiveFdStringsForDisplay");
+		if (transitiveFdStringsForDisplay == null) {
+			transitiveFdStringsForDisplay = new ArrayList<>();
+		}
 
-		// Sort original FDs within itself
-		List<String> originalFdStrings = originalFDs.stream()
-				.map(FD::toString)
-				.sorted()
-				.collect(Collectors.toList());
-
-		// Sort derived (inferred) FDs within themselves
-		List<String> transitiveFdStrings  = transitiveFDs.stream()
-				.map(FD::toString)
-				.sorted()
-				.collect(Collectors.toList());
-
-		// Create the final list to display: originals first, then derivatives
-		List<String> allFdItemStrings = new ArrayList<>(originalFdStrings);
-		allFdItemStrings.addAll(transitiveFdStrings);
-
-		// Clear duplicate elements
-		List<String> distinctFdItems = new ArrayList<>(new LinkedHashSet<>(allFdItemStrings));
-
-		model.addAttribute("fdItems", originalFdStrings);
+		model.addAttribute("fdItems", originalFdStringsForDisplay);
 
 		// Only derived ones will be shown in red
-		model.addAttribute("fdInferred", transitiveFdStrings);
-		model.addAttribute("transitiveFdStrings", transitiveFdStrings);
+		model.addAttribute("fdInferred", transitiveFdStringsForDisplay);
+		model.addAttribute("transitiveFdStrings", transitiveFdStringsForDisplay);
 
 		return "normalization";
 	}
@@ -330,14 +347,5 @@ public class PageController {
 	private List<FD> parseFDString(String fdStr, List<String> originalAttrOrder) {
 		// Delegate to FDService
 		return fdService.parseFDStringWithIndexes(fdStr, originalAttrOrder);
-	}
-
-	/**
-	 * Convert FD to string representation
-	 */
-	private String fdToString(FD fd) {
-		String lhs = fd.getLhs().stream().sorted().collect(Collectors.joining(","));
-		String rhs = fd.getRhs().stream().sorted().collect(Collectors.joining(","));
-		return lhs + "→" + rhs;
 	}
 }

@@ -180,6 +180,8 @@ public class RicService {
 	/**
 	 * Building the ordered list of strategies will be applied for the computation. Duplicates are filtered out so that
 	 * the same Monte Carlo configuration will never be tried twice.
+	 *
+	 * Order: User's choice → MC 100K → MC 10K → MC 1K (with extended timeout for last resort)
 	 */
 	private List<RicAttempt> buildAttempts(boolean initialMonteCarlo, int initialSamples) {
 		List<RicAttempt> attempts = new ArrayList<>();
@@ -189,14 +191,15 @@ public class RicService {
 		addAttempt(attempts, seen, new RicAttempt(initialMonteCarlo, normalizedInitialSamples, 10));
 		addAttempt(attempts, seen, new RicAttempt(true, 100_000, 10));
 		addAttempt(attempts, seen, new RicAttempt(true, 10_000, 10));
-		addAttempt(attempts, seen, new RicAttempt(true, 1_000, 10));
+		// MC 1000 samples with extended timeout (30s) as last resort for large datasets
+		addAttempt(attempts, seen, new RicAttempt(true, 1_000, 30));
 
 		return attempts;
 	}
 
 	/**
 	 * Function that processes attempt configurations. Based on Monte Carlo approximation and
-	 * sample count, since the timeout is adjusted to 10 seconds for every attempt.
+	 * sample count with varying timeouts.
 	 */
 	private void addAttempt(List<RicAttempt> attempts, Set<String> seen, RicAttempt attempt) {
 		String key = attempt.monteCarlo() + "#" + attempt.samples();
@@ -339,10 +342,7 @@ public class RicService {
 					rows.add(darr);
 				}
 			}
-			System.out.println("[RIC] Parsed row count: " + rows.size());
-
 			if (rows.isEmpty()) {
-				System.out.println("[RIC] WARNING: No rows parsed from output file, falling back to stdout parsing");
 				return parseRicFromStdout(procOutput.toString());
 			}
 
@@ -359,7 +359,6 @@ public class RicService {
 					out[r] = rr;
 				}
 			}
-			System.out.println("[RIC] Final output matrix size: " + out.length + "x" + (out.length > 0 ? out[0].length : 0));
 			return out;
 
 		} catch (InterruptedException ex) {

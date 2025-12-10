@@ -1,12 +1,12 @@
-# Use an image containing Maven and Java 18 to compile the project
-FROM maven:3.8.5-openjdk-18 AS build
+# Use an image containing Maven and Java 17 to compile the project
+FROM maven:3.8.5-openjdk-17 AS build
 
 WORKDIR /app
 COPY . .
 RUN mvn clean package -DskipTests
 
-# Use a smaller Java 18 image to run the application
-FROM openjdk:18-jdk-slim
+# Use a smaller Java 17 image to run the application
+FROM eclipse-temurin:17-jre-jammy
 
 WORKDIR /app
 

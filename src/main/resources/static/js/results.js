@@ -12,6 +12,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const fdListUl = document.getElementById('fdListUl');
     // Transitive list, data passed from Thymeleaf
     const transitiveFdsArray = window.transitiveFdsArray || [];
+    // Number of duplicate tuples removed
+    const duplicatesRemoved = window.duplicatesRemoved || 0;
+
+    // Show duplicate removal warning message below FD list if duplicates were removed
+    if (duplicatesRemoved > 0 && fdListUl) {
+        const warningEl = document.createElement('p');
+        warningEl.className = 'duplicate-warning-message';
+        warningEl.style.cssText = 'margin-top: 10px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107; color: #856404; font-size: 0.95em;';
+        warningEl.textContent = `Note: ${duplicatesRemoved} duplicate tuple${duplicatesRemoved > 1 ? 's were' : ' was'} automatically removed from the input data.`;
+
+        // Insert after fdListUl, before showClosureBtn
+        if (showClosureBtn) {
+            showClosureBtn.parentElement.insertBefore(warningEl, showClosureBtn);
+        } else if (fdListUl.nextSibling) {
+            fdListUl.parentElement.insertBefore(warningEl, fdListUl.nextSibling);
+        } else {
+            fdListUl.parentElement.appendChild(warningEl);
+        }
+    }
 
     if (showClosureBtn && fdListUl) {
         showClosureBtn.addEventListener('click', () => {
@@ -34,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // No transitive FDs - show message
                 const messageEl = document.createElement('p');
-                messageEl.textContent = 'This set is transitively closured.';
+                messageEl.textContent = 'This set is transitively closed.';
                 messageEl.classList.add('transitive-closure-message');
                 fdListUl.parentElement.appendChild(messageEl);
             }

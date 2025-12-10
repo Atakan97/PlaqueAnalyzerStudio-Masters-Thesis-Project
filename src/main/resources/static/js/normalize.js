@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // No transitive FDs - show message
                 const messageEl = document.createElement('p');
-                messageEl.textContent = 'This set is transitively closured.';
+                messageEl.textContent = 'This set is transitively closed.';
                 messageEl.classList.add('transitive-closure-message');
                 fdListUlNorm.parentElement.appendChild(messageEl);
             }
@@ -638,7 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             } else {
                                 // No transitive FDs - show message
                                 const messageEl = document.createElement('p');
-                                messageEl.textContent = 'This set is transitively closured.';
+                                messageEl.textContent = 'This set is transitively closed.';
                                 messageEl.classList.add('transitive-closure-message');
                                 fdUl.parentElement.appendChild(messageEl);
                             }
@@ -677,7 +677,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             const lightness = 10 + 90 * ricVal;
                             td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
                         } else {
-                            td.style.backgroundColor = 'white';
+                            // Use same background color as original table (#f1f5f9 - light gray)
+                            td.style.backgroundColor = '#f1f5f9';
                             td.classList.remove('plaque-cell');
                         }
                     }
@@ -759,11 +760,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const addBtn = footer.querySelector('button');
         if (!addBtn) return;
 
+        // Find the "Decomposition Finished" button
+        const checkDecompBtn = footer.querySelector('.check-decomp-local-btn');
+
         if (isBCNF) {
             addBtn.disabled = true;
             addBtn.title = 'This relation is already in BCNF. No decomposition needed.';
             addBtn.style.opacity = '0.5';
             addBtn.style.cursor = 'not-allowed';
+
+            // Also disable "Decomposition Finished" button
+            if (checkDecompBtn) {
+                checkDecompBtn.disabled = true;
+                checkDecompBtn.title = 'This relation is already in BCNF. No decomposition needed.';
+                checkDecompBtn.style.opacity = '0.5';
+                checkDecompBtn.style.cursor = 'not-allowed';
+            }
 
             // Add info message
             let infoMsg = footer.querySelector('.bcnf-info-message');
@@ -782,9 +794,34 @@ document.addEventListener('DOMContentLoaded', () => {
             addBtn.style.opacity = '1';
             addBtn.style.cursor = 'pointer';
 
+            // Also enable "Decomposition Finished" button
+            if (checkDecompBtn) {
+                checkDecompBtn.disabled = false;
+                checkDecompBtn.title = '';
+                checkDecompBtn.style.opacity = '1';
+                checkDecompBtn.style.cursor = 'pointer';
+            }
+
             const infoMsg = footer.querySelector('.bcnf-info-message');
             if (infoMsg) infoMsg.remove();
         }
+    }
+
+    /**
+     * Renumber all decomposed tables sequentially after a table is removed
+     */
+    function renumberDecomposedTables() {
+        // Find all decomposed tables (excluding orig-as-original)
+        const allDecomposedWrappers = document.querySelectorAll('.decomposed-wrapper:not(.orig-as-original)');
+
+        let counter = 1;
+        allDecomposedWrappers.forEach(wrapper => {
+            const title = wrapper.querySelector('h3');
+            if (title && title.textContent.match(/Decomposed Table \d+/)) {
+                title.textContent = `Decomposed Table ${counter}:`;
+                counter++;
+            }
+        });
     }
 
     /**
@@ -1047,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     // No transitive FDs - show message right after the ul
                     const messageEl = document.createElement('p');
-                    messageEl.textContent = 'This set is transitively closured.';
+                    messageEl.textContent = 'This set is transitively closed.';
                     messageEl.classList.add('transitive-closure-message');
                     // Force block display and full width to ensure new line
                     messageEl.style.display = 'block';
@@ -1524,6 +1561,99 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Section for Decomposition Finished button
     // Select the required HTML element
+
+    // Function to check if any table is a subset of another table
+    function checkAndRemoveSubsetTables(options = {}) {
+        const wrappers = (options.wrappers && options.wrappers.length)
+            ? options.wrappers
+            : Array.from(document.querySelectorAll('.decomposed-wrapper'));
+
+        if (wrappers.length <= 1) {
+            return { removed: [], warnings: [] };
+        }
+
+        const removed = [];
+        const warnings = [];
+        const tablesToRemove = new Set();
+
+        // Check each pair of tables
+        for (let i = 0; i < wrappers.length; i++) {
+            if (tablesToRemove.has(i)) continue;
+
+            const cols1 = parseColumnsFromWrapper(wrappers[i]);
+            const set1 = new Set(cols1);
+
+            for (let j = 0; j < wrappers.length; j++) {
+                if (i === j || tablesToRemove.has(j)) continue;
+
+                const cols2 = parseColumnsFromWrapper(wrappers[j]);
+                const set2 = new Set(cols2);
+
+                // Check if set1 is a proper subset of set2
+                const is1SubsetOf2 = cols1.length < cols2.length &&
+                    cols1.every(col => set2.has(col));
+
+                // Check if set2 is a proper subset of set1
+                const is2SubsetOf1 = cols2.length < cols1.length &&
+                    cols2.every(col => set1.has(col));
+
+                if (is1SubsetOf2) {
+                    const table1Name = wrappers[i].querySelector('h3')?.textContent || `Table ${i + 1}`;
+                    const table2Name = wrappers[j].querySelector('h3')?.textContent || `Table ${j + 1}`;
+                    const cols1Display = cols1.map(c => c + 1).join(', ');
+                    const cols2Display = cols2.map(c => c + 1).join(', ');
+
+                    warnings.push(
+                        `${table1Name} (columns: ${cols1Display}) is a subset of ${table2Name} (columns: ${cols2Display}) and has been removed as it is redundant.`
+                    );
+                    tablesToRemove.add(i);
+                    break;
+                } else if (is2SubsetOf1) {
+                    const table1Name = wrappers[i].querySelector('h3')?.textContent || `Table ${i + 1}`;
+                    const table2Name = wrappers[j].querySelector('h3')?.textContent || `Table ${j + 1}`;
+                    const cols1Display = cols1.map(c => c + 1).join(', ');
+                    const cols2Display = cols2.map(c => c + 1).join(', ');
+
+                    warnings.push(
+                        `${table2Name} (columns: ${cols2Display}) is a subset of ${table1Name} (columns: ${cols1Display}) and has been removed as it is redundant.`
+                    );
+                    tablesToRemove.add(j);
+                }
+            }
+        }
+
+        // Remove the subset tables
+        Array.from(tablesToRemove)
+            .sort((a, b) => b - a) // Remove from end to beginning to avoid index issues
+            .forEach(index => {
+                const wrapper = wrappers[index];
+                removed.push(wrapper);
+                wrapper.remove();
+            });
+
+        // Renumber remaining tables if any were removed
+        if (removed.length > 0) {
+            // Find the container from the remaining wrappers
+            const remainingInOriginalList = wrappers.filter(w => !removed.includes(w));
+            if (remainingInOriginalList.length > 0) {
+                const container = remainingInOriginalList[0].parentElement;
+                if (container) {
+                    // Get fresh list of wrappers from the container (after removal)
+                    const remainingWrappers = Array.from(container.querySelectorAll('.decomposed-wrapper'));
+                    remainingWrappers.forEach((w, idx) => {
+                        // Title is an h3 element without a specific class
+                        const titleEl = w.querySelector('h3');
+                        if (titleEl) {
+                            titleEl.textContent = `Decomposed Table ${idx + 1}:`;
+                        }
+                    });
+                }
+            }
+        }
+
+        return { removed, warnings };
+    }
+
     // Function to check if columns are covered
     function checkColumnCoverage(options = {}) {
         const wrappers = (options.wrappers && options.wrappers.length)
@@ -1663,6 +1793,37 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Check and remove subset tables before validation
+        const subsetResult = checkAndRemoveSubsetTables({ wrappers: localWrappers });
+
+        // If any tables were removed, show warning and stop
+        if (subsetResult.warnings.length > 0) {
+            const warningText = subsetResult.warnings.join('\n\n');
+            await Swal.fire({
+                icon: 'warning',
+                title: 'Redundant Tables Removed',
+                html: warningText.replace(/\n/g, '<br>'),
+                confirmButtonText: 'OK'
+            });
+
+            // Update localWrappers array after removal
+            const updatedWrappers = localContainer ? Array.from(localContainer.querySelectorAll('.decomposed-wrapper')) : [];
+
+            // If no tables left after removal, show error
+            if (updatedWrappers.length === 0) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No Valid Tables',
+                    text: 'All tables were removed as they were subsets of other tables. Please add valid decomposed tables.',
+                    confirmButtonText: 'Close'
+                });
+                return;
+            }
+
+            // Don't proceed with validation - let user review the changes
+            return;
+        }
+
         const baseColumns = parseColumnsFromWrapper(baseWrapper);
         if (baseColumns.length === 0) {
             Swal.fire({
@@ -1702,6 +1863,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 storeResult: false
             });
 
+            // Check if lossless-join failed
+            if (!result.ljValid) {
+                let finalMessage = "Decomposition Check Results:\n\n";
+                finalMessage += "• " + result.ljMessage.replace('Error:', 'ERROR:');
+                finalMessage += "\n\n------------------------------------\n";
+                finalMessage += "Please revise your decomposition based on the errors.";
+
+                triggerBtn.disabled = false;
+                document.body.style.cursor = 'default';
+
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Check Failed: Not Lossless-Join',
+                    html: finalMessage.replace(/\n/g, '<br>'),
+                    confirmButtonText: 'Close'
+                });
+                return;
+            }
+
+            // If lossless-join is valid, show success message
             const finalMessage = [
                 'Decomposition Check Results:',
                 '',
@@ -1710,7 +1891,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `\u2022 ${result.dpMessage}`
             ].join('\n');
 
-            // The definition of success will be checked without dependency-preserving
             const success = result.ljValid && coverageResult.valid;
             await Swal.fire({
                 icon: success ? 'info' : 'warning',
@@ -1822,11 +2002,44 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteBtns.forEach(btn => btn.style.display = 'block');
             // Remove lock class
             w.classList.remove('locked-decomposition');
-            // Clear FD list
-            const fdUl = w.querySelector('.fd-list-container ul');
-            if (fdUl) {
-                fdUl.innerHTML = '';
+
+            // Hide FD container completely
+            const fdContainer = w.querySelector('.fd-list-container');
+            if (fdContainer) {
+                fdContainer.style.display = 'none';
+                // Also clear the list content
+                const fdUl = fdContainer.querySelector('ul');
+                if (fdUl) {
+                    fdUl.innerHTML = '';
+                }
             }
+
+            // Remove normal form badges
+            const normalFormBadges = w.querySelector('.normal-form-badges');
+            if (normalFormBadges) {
+                normalFormBadges.remove();
+            }
+
+            // Remove transitive closure message if exists
+            const transitiveMessage = w.querySelector('.transitive-closure-message');
+            if (transitiveMessage) {
+                transitiveMessage.remove();
+            }
+
+            // Clear plaque coloring from table cells
+            const allCells = w.querySelectorAll('tbody td');
+            allCells.forEach(cell => {
+                cell.classList.remove('plaque-cell');
+                cell.classList.remove('plaque-light-text');
+                // Reset to default gray background (same as original table)
+                cell.style.backgroundColor = '#f1f5f9';
+            });
+
+            // Clear stored RIC and FD data from wrapper dataset
+            delete w.dataset.ricMatrix;
+            delete w.dataset.projectedFds;
+            delete w.dataset.projectedFdsOrig;
+            delete w.dataset.transitiveFds;
         });
         // Show "+Add Table" button again
         if (!targetGroup) {
@@ -1910,6 +2123,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Safely reset DP/LJ state
             clearDpLjStatus();
+
+            // Check and remove subset tables before validation
+            const subsetResult = checkAndRemoveSubsetTables();
+
+            // If any tables were removed, show warning and stop
+            if (subsetResult.warnings.length > 0) {
+                const warningText = subsetResult.warnings.join('\n\n');
+
+                // Return the interface to normal
+                document.body.style.cursor = 'default';
+                decompositionFinishedBtn.disabled = false;
+
+                await Swal.fire({
+                    icon: 'warning',
+                    title: 'Redundant Tables Removed',
+                    html: warningText.replace(/\n/g, '<br>'),
+                    confirmButtonText: 'OK'
+                });
+
+                // Check if any tables are left
+                const remainingWrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+                if (remainingWrappers.length === 0) {
+                    await Swal.fire({
+                        icon: 'error',
+                        title: 'No Valid Tables',
+                        text: 'All tables were removed as they were subsets of other tables. Please add valid decomposed tables.',
+                        confirmButtonText: 'Close'
+                    });
+                }
+
+                // Don't proceed with validation - let user review the changes
+                return;
+            }
+
 
             // Variables that will hold the results
             const messages = [];
@@ -2441,7 +2688,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         } else {
                             // No transitive FDs - show message
                             const messageEl = document.createElement('p');
-                            messageEl.textContent = 'This set is transitively closured.';
+                            messageEl.textContent = 'This set is transitively closed.';
                             messageEl.classList.add('transitive-closure-message');
                             fdUl.parentElement.appendChild(messageEl);
                         }
@@ -2476,12 +2723,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const finalAttempts = parseInt(attemptEl?.textContent || '0', 10);
                 const finalElapsed = finalElapsedSecs;
 
-                await Swal.fire({
-                    title: 'Normalization Complete! (BCNF)',
-                    text: 'Congratulations! The decomposition process is finished. Please enter your name to save the results.',
-                    icon: 'success',
-                    confirmButtonText: 'Continue'
-                });
 
                 // Hide all action buttons except "Show BCNF Tables"
                 if (computeAllBtn) computeAllBtn.style.display = 'none';
@@ -2684,6 +2925,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (result.isConfirmed) {
                 wrapper.remove();
+                renumberDecomposedTables();
             }
         });
         if (!origMode) wrapper.appendChild(removeBtn);
@@ -2787,10 +3029,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 decomposedCols.forEach(idx => {
                     const td = tr.insertCell();
                     td.textContent = row[idx] || '';
-                    td.style.backgroundColor = 'white';
                     td.dataset.origIdx = idx;
                     td.classList.remove('plaque-cell');
-                    td.style.backgroundColor = 'white';
+                    // Use same background color as original table (#f1f5f9 - light gray)
+                    td.style.backgroundColor = '#f1f5f9';
                 });
             });
             try { wrapper.dataset.columns = JSON.stringify(decomposedCols); } catch (e) { wrapper.dataset.columns = '[]'; }
@@ -2926,6 +3168,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (result.isConfirmed) {
                         // Remove from the state array (decomposedCols)
                         decomposedCols = decomposedCols.filter(c => Number(c) !== idxToDelete);
+
+                        // If no columns left, delete the entire table
+                        if (decomposedCols.length === 0) {
+                            wrapper.remove();
+                            renumberDecomposedTables();
+                            return;
+                        }
+
                         // Re-render the table headers and body
                         renderDecomposed();
                         // Recalculate FDs for the modified table
@@ -3025,7 +3275,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const lightness = 10 + 90 * ricVal;
                                     td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
                                 } else {
-                                    td.style.backgroundColor = 'white';
+                                    // Use same background color as original table (#f1f5f9 - light gray)
+                                    td.style.backgroundColor = '#f1f5f9';
                                     td.classList.remove('plaque-cell');
                                 }
                             }

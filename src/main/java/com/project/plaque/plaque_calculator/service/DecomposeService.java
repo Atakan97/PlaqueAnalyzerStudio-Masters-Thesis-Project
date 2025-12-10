@@ -7,6 +7,7 @@ import com.project.plaque.plaque_calculator.dto.DecomposeAllResponse;
 import com.project.plaque.plaque_calculator.dto.DecomposeRequest;
 import com.project.plaque.plaque_calculator.dto.DecomposeResponse;
 import com.project.plaque.plaque_calculator.model.FD;
+import com.project.plaque.plaque_calculator.util.CsvParsingUtil;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Service;
 import java.lang.reflect.Type;
@@ -302,11 +303,18 @@ public class DecomposeService {
 		// Build global manual rows, prefer top-level manualData if provided
 		List<String> manualRowsList = new ArrayList<>();
 		if (req.getManualData() != null && !req.getManualData().isBlank()) {
-			// Dedupe preserving order
+			// Parse and re-serialize using RIC-compatible format
+			List<List<String>> parsedRows = CsvParsingUtil.parseRows(req.getManualData());
 			LinkedHashSet<String> set = new LinkedHashSet<>();
-			for (String part : req.getManualData().split(";", -1)) {
-				String p = part == null ? "" : part.trim();
-				if (!p.isEmpty()) set.add(p);
+			for (List<String> row : parsedRows) {
+				// Sanitize each cell for RIC compatibility (replace commas)
+				List<String> sanitized = row.stream()
+						.map(cell -> cell == null ? "" : cell.replace(",", "|").replace("\"", "").trim())
+						.collect(Collectors.toList());
+				String rowStr = String.join(",", sanitized);
+				if (!rowStr.replace(",", "").trim().isEmpty()) {
+					set.add(rowStr);
+				}
 			}
 			manualRowsList.addAll(set);
 		} else {
@@ -333,10 +341,12 @@ public class DecomposeService {
 				for (Integer colIdx : unionColsSorted) {
 					int i = colIdx == null ? -1 : colIdx;
 					String v = (i >= 0 && i < row.size()) ? row.get(i) : "";
-					picked.add(v == null ? "" : v);
+					// Sanitize cell value for RIC compatibility
+					String sanitized = (v == null ? "" : v.replace(",", "|").replace("\"", "").trim());
+					picked.add(sanitized);
 				}
 				String tup = String.join(",", picked);
-				if (!tup.isEmpty()) seen.add(tup);
+				if (!tup.replace(",", "").trim().isEmpty()) seen.add(tup);
 			}
 			manualRowsList.addAll(seen);
 		}
@@ -457,13 +467,8 @@ public class DecomposeService {
 	}
 
 	private String sanitizeManualDataString(String manualData) {
-		if (manualData == null) {
-			return "";
-		}
-		return Arrays.stream(manualData.split(";"))
-				.map(String::trim)
-				.filter(row -> !row.replace(",", "").trim().isEmpty())
-				.collect(Collectors.joining(";"));
+		List<List<String>> rows = CsvParsingUtil.parseRows(manualData);
+		return CsvParsingUtil.toRicCompatibleString(rows);
 	}
 
 	private String normalizeFds(String fds) {
@@ -489,45 +494,23 @@ public class DecomposeService {
 		return tableLabel + ": " + step;
 	}
 
-	private String buildManualDataForColumns(List<Integer> columns, HttpSession session) {
-		if (columns == null || columns.isEmpty()) {
-			return "";
-		}
+
+	private String buildManualDataForColumns(List<Integer> cols, HttpSession session) {
 		@SuppressWarnings("unchecked")
 		List<List<String>> originalTuples = (List<List<String>>) session.getAttribute("originalTuples");
-		if (originalTuples == null || originalTuples.isEmpty()) {
-			String origJson = (String) session.getAttribute("originalTableJson");
-			if (origJson != null && !origJson.isBlank()) {
-				try {
-					Type t = new TypeToken<List<List<String>>>(){}.getType();
-					originalTuples = gson.fromJson(origJson, t);
-					if (originalTuples == null) originalTuples = Collections.emptyList();
-				} catch (Exception ex) {
-					originalTuples = Collections.emptyList();
-				}
-			}
-		}
 		if (originalTuples == null) {
-			originalTuples = Collections.emptyList();
+			return "";
 		}
-		List<Integer> normalizedCols = columns.stream()
-				.filter(Objects::nonNull)
-				.map(Number::intValue)
-				.filter(idx -> idx >= 0)
-				.collect(Collectors.toList());
-		List<String> rows = new ArrayList<>();
-		for (List<String> tuple : originalTuples) {
+		List<List<String>> projected = new ArrayList<>();
+		for (List<String> row : originalTuples) {
 			List<String> picked = new ArrayList<>();
-			for (Integer idx : normalizedCols) {
-				String cell = (idx != null && idx < tuple.size()) ? tuple.get(idx) : "";
-				picked.add(cell == null ? "" : cell.trim());
+			for (Integer colIdx : cols) {
+				int i = colIdx == null ? -1 : colIdx;
+				picked.add(i >= 0 && i < row.size() ? row.get(i) : "");
 			}
-			String joined = String.join(",", picked);
-			if (!joined.isBlank()) {
-				rows.add(joined);
-			}
+			projected.add(picked);
 		}
-		return String.join(";", rows);
+		return CsvParsingUtil.toRicCompatibleString(projected);
 	}
 
 	// Numbering all non-empty subsets X of attrs and compute closure(X) under originalFDs
