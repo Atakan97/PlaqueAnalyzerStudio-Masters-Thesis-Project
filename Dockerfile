@@ -1,12 +1,12 @@
-# Use an image containing Maven and Java 17 to compile the project
-FROM maven:3.8.5-openjdk-17 AS build
+# Use an image containing Maven and Java 21 to compile the project
+FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /app
 COPY . .
 RUN mvn clean package -DskipTests
 
-# Use a smaller Java 17 image to run the application
-FROM eclipse-temurin:17-jre-jammy
+# Use a smaller Java 21 image to run the application
+FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
