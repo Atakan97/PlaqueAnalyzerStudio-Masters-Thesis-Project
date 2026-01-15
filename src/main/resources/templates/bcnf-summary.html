@@ -16,8 +16,8 @@
       <p class="bcnf-subtitle">Review the BCNF decomposition tables and their functional dependencies, and save the session details.</p>
     </div>
     <div class="bcnf-header-actions">
-      <a th:href="@{/normalization}" class="button pill">Back to Normalization</a>
-      <a th:href="@{/calc}" class="button pill">Back to Main Page</a>
+      <a th:href="${computationId != null ? '/normalization?id=' + computationId : '/normalization'}" class="button pill">Back to Normalization</a>
+      <a th:href="${plaqueMode == 'disabled' ? '/calc?mode=no-plaque' : '/calc?mode=with-plaque'}" class="button pill">Back to Main Page</a>
     </div>
   </header>
 
@@ -46,6 +46,7 @@
 <script th:inline="javascript">
 /*<![CDATA[*/
   window.bcnfSummaryData = /*[[${bcnfSummaryJson}]]*/ null;
+  window.plaqueMode = /*[[${plaqueMode}]]*/ 'enabled';
   window.bcnfAttempts = /*[[${bcnfAttempts}]]*/ 0;
   window.bcnfElapsedSeconds = /*[[${bcnfElapsedSeconds}]]*/ 0;
 /*]]>*/

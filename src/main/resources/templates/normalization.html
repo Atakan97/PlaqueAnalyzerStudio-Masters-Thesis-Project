@@ -9,6 +9,7 @@
     /*<![CDATA[*/
     window.originalTable   = /*[[${initialCalcTableJson}]]*/ [];
     window.ricMatrixTable  = /*[[${ricJson}]]*/ [];
+    window.plaqueMode      = /*[[${plaqueMode}]]*/ 'enabled';
     window.currentRelationsManual = /*[[${currentRelationsManualJson}]]*/ [];
     window.currentRelationsColumns = /*[[${currentRelationsColumnsJson}]]*/ [];
     window.currentRelationsFds = /*[[${currentRelationsFdsJson}]]*/ [];
@@ -18,6 +19,7 @@
     window.currentGlobalManualRows = /*[[${currentGlobalManualRowsJson}]]*/ [];
     window.currentGlobalRic = /*[[${currentGlobalRicJson}]]*/ [];
     window.normalizationStartTimeMs = /*[[${normalizationStartTimeMs}]]*/ null;
+    window.computationId = /*[[${computationId}]]*/ null;
     /*]]>*/
   </script>
 
@@ -29,12 +31,27 @@
 <div class="normalization-container">
 
   <div class="norm-header">
-    <h2 class="section-heading-sm">Normalization Assistant</h2>
+    <div style="display: flex; align-items: center; gap: 15px;">
+      <h2 class="section-heading-sm">Normalization Assistant</h2>
+      <span th:if="${plaqueMode == 'enabled'}" class="plaque-mode-badge plaque-mode-enabled">🔵 WITH-PLAQUE Mode</span>
+      <span th:if="${plaqueMode == 'disabled'}" class="plaque-mode-badge plaque-mode-disabled">⚪ NO-PLAQUE Mode</span>
+    </div>
     <div class="norm-header-actions">
-      <a th:if="${canReturn}" th:href="@{/normalize/previous}" class="button pill return-previous-btn">
+      <a th:if="${canReturn}" th:href="@{/normalize/previous(id=${computationId})}" class="button pill return-previous-btn">
         ← Return to Previous Step
       </a>
-      <a th:href="@{/calc-results}" class="button pill return-results-btn">← Return to Calculation Results</a>
+      <!-- WITH-PLAQUE mode: Return to calc-results -->
+      <a th:if="${plaqueMode == null or plaqueMode == 'enabled'}"
+         th:href="@{/calc-results(id=${computationId})}"
+         class="button pill return-results-btn">
+        ← Return to Calculation Results
+      </a>
+      <!-- NO-PLAQUE mode: Return to main page (calc.html) -->
+      <a th:if="${plaqueMode == 'disabled'}"
+         th:href="@{/calc(mode='no-plaque')}"
+         class="button pill return-results-btn">
+        ← Return to Main Page
+      </a>
     </div>
   </div>
 

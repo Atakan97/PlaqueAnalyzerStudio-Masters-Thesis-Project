@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Check if ricMatrix is available (passed via Thymeleaf inline JS in calc-results.html)
     const ricMatrix = window.ricMatrix || [];
+    const plaqueMode = window.plaqueMode || 'enabled';
 
     // UI elements
     const showCalcBtn = document.getElementById('showCalcBtn');
@@ -110,8 +111,14 @@ document.addEventListener('DOMContentLoaded', () => {
         ricTable.style.display = 'none';
         returnBtn.style.display = 'none';
         showCalcBtn.style.display = 'inline-block';
-        // Initial color application (on load)
-        applyColorScale('#initialCalcTable');
+
+        // Initial color application (on load) - only if plaque mode is enabled
+        if (plaqueMode === 'enabled') {
+            applyColorScale('#initialCalcTable');
+        } else {
+            console.log('[results.js] NO-PLAQUE mode: Skipping color scale application');
+        }
+
         // Button listener, show ric matrix
         showCalcBtn.addEventListener('click', () => {
             initialCalcTable.style.display = 'none';
@@ -119,7 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showCalcBtn.style.display = 'none';
             returnBtn.style.display = 'inline-block';
             // Apply color scale to RIC table when showing it
-            applyColorScale('#ricTable');
+            if (plaqueMode === 'enabled') {
+                applyColorScale('#ricTable');
+            }
         });
         // Button listener, return to initial data
         returnBtn.addEventListener('click', () => {
@@ -128,7 +137,9 @@ document.addEventListener('DOMContentLoaded', () => {
             returnBtn.style.display = 'none';
             showCalcBtn.style.display = 'inline-block'; // Show showCalcBtn
             // Apply color scale to initial table
-            applyColorScale('#initialCalcTable');
+            if (plaqueMode === 'enabled') {
+                applyColorScale('#initialCalcTable');
+            }
         });
     } else {
         console.warn('Buttons or tables not found on the results page. Check element IDs.');

@@ -254,6 +254,65 @@
       font-weight: 600;
       font-size: 0.9rem;
     }
+
+    /* Group selection buttons */
+    .group-button {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: white;
+      border: 3px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 30px 40px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      min-width: 220px;
+    }
+
+    .group-button:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .group-button.group-a {
+      border-color: #3b82f6;
+    }
+
+    .group-button.group-a:hover {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.05));
+      border-color: #2563eb;
+    }
+
+    .group-button.group-b {
+      border-color: #94a3b8;
+    }
+
+    .group-button.group-b:hover {
+      background: linear-gradient(135deg, rgba(148, 163, 184, 0.05), rgba(100, 116, 139, 0.05));
+      border-color: #64748b;
+    }
+
+    .group-icon {
+      font-size: 3em;
+      margin-bottom: 10px;
+    }
+
+    .group-title {
+      font-size: 1.4em;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+
+    .group-subtitle {
+      font-size: 0.9em;
+      color: #64748b;
+      text-align: center;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -293,9 +352,19 @@
   </div>
 
   <div class="start-app-section">
-    <a th:href="@{/calc}" class="start-button">
-      Start the Application
-    </a>
+    <h3 style="color: #1e3a8a; margin-bottom: 20px; font-size: 1.3em;">Please Select Your Group</h3>
+    <div style="display: flex; gap: 20px; justify-content: center; margin-bottom: 20px;">
+      <a th:href="@{/calc?mode=with-plaque}" class="group-button group-a">
+        <div class="group-icon">🔵</div>
+        <div class="group-title">Group A</div>
+        <div class="group-subtitle">With Plaque Visualization</div>
+      </a>
+      <a th:href="@{/calc?mode=no-plaque}" class="group-button group-b">
+        <div class="group-icon">⚪</div>
+        <div class="group-title">Group B</div>
+        <div class="group-subtitle">Without Plaque Visualization</div>
+      </a>
+    </div>
   </div>
   <hr style="margin-top: 30px; margin-bottom: 30px; border-color: #cbd5e1;">
 

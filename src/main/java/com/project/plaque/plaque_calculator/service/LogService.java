@@ -18,7 +18,7 @@ public class LogService {
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	public void logBcnfSuccess(String userName, int attempts, long elapsedTimeSecs,
-							 Integer tableCount, Boolean dependencyPreserved) {
+							 Integer tableCount, Boolean dependencyPreserved, String plaqueMode) {
 		LogEntry logEntry = new LogEntry();
 		logEntry.setUserName(userName);
 		logEntry.setAttempts(attempts > 0 ? attempts : 1);
@@ -30,6 +30,7 @@ public class LogService {
 			var details = objectMapper.createObjectNode();
 			details.put("Total Decomposed Table Count", tableCount != null ? tableCount : 0);
 			details.put("Decomposition Dependency-Preserving Status", dependencyPreserved != null && dependencyPreserved);
+			details.put("Plaque Mode", plaqueMode != null ? plaqueMode : "enabled");
 			logEntry.setDetailsJson(objectMapper.writeValueAsString(details));
 		} catch (Exception ex) {
 			logEntry.setDetailsJson(null);
@@ -37,7 +38,7 @@ public class LogService {
 
 		// Save using LogRepository
 		logRepository.save(logEntry);
-		System.out.println("Logged BCNF Success: User=" + userName + ", Attempts=" + attempts + ", Time=" + elapsedTimeSecs + "s, Tables=" + (tableCount != null ? tableCount : 0) + ", DP=" + (dependencyPreserved != null && dependencyPreserved));
+		System.out.println("Logged BCNF Success: User=" + userName + ", Attempts=" + attempts + ", Time=" + elapsedTimeSecs + "s, Tables=" + (tableCount != null ? tableCount : 0) + ", DP=" + (dependencyPreserved != null && dependencyPreserved) + ", Mode=" + plaqueMode);
 	}
 
 	public void info(String message) {

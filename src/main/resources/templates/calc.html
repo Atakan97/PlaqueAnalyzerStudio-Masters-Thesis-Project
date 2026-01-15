@@ -24,7 +24,8 @@
       method="post"
       enctype="multipart/form-data">
 
-  <div class="options">
+  <!-- Monte Carlo options - only visible in WITH-PLAQUE mode -->
+  <div class="options" th:if="${plaqueMode == null or plaqueMode == 'enabled'}">
     <div class="options-glass-grid">
       <label class="toggle-switch">
         <input type="checkbox" id="mcCheckbox" name="monteCarlo" />
@@ -43,9 +44,16 @@
     </div>
   </div>
 
+  <!-- Compute button - text changes based on mode -->
   <div class="compute-btn-wrapper">
-    <button type="submit" id="computeBtn" class="compute-btn pill">Compute Plaque</button>
-    <p class="hint compute-hint">Runs the relational information content calculation.</p>
+    <button type="submit" id="computeBtn" class="compute-btn pill"
+            th:text="${plaqueMode == 'disabled' ? 'Start Normalization' : 'Compute Plaque'}">
+      Compute Plaque
+    </button>
+    <p class="hint compute-hint"
+       th:text="${plaqueMode == 'disabled' ? 'Prepares data for normalization process.' : 'Runs the relational information content computation.'}">
+      Runs the relational information content computation.
+    </p>
   </div>
 
   <div class="input-container">
@@ -53,7 +61,7 @@
       <h2 class="section-heading">Input Data</h2>
 
       <div id="section-upload" class="tab-content">
-        <p class="hint hint--info" style="margin-bottom: 10px;">Upload CSV file or enter data manually.</p>
+        <p class="hint hint--info" style="margin-bottom: 10px;">Note: Upload CSV file or enter data manually.</p>
         <input type="file" id="csvfile" name="csvfile" accept=".csv" />
 
         <hr style="margin: 15px 0; border: 0; border-top: 1px solid #ccc;"> <div id="manual-data-controls">
@@ -61,6 +69,12 @@
           <label for="columnCountInput">Number of Columns:</label>
           <input type="number" id="columnCountInput" value="3" min="1" max="20" class="small-input">
           <button type="button" id="updateColumnsBtn" class="small">Update Table</button>
+        </div>
+        <div class="table-actions">
+          <button type="button" id="addRow" class="small">+ Add Row</button>
+          <button type="button" id="clearManualDataBtn" class="small danger">
+            Delete Rows
+          </button>
         </div>
         <div class="table-scroll-wrapper">
           <table id="manualDataTable" class="data-grid">
@@ -70,8 +84,7 @@
             </tbody>
           </table>
         </div>
-        <button type="button" id="addRow" class="small">+ Add Row</button>
-        <div class="hint hint--info">Column names in the first row.</div>
+        <div class="hint hint--info">Note: Column names are written in the first row.</div>
       </div>
 
       </div>
@@ -81,20 +94,25 @@
       <h2 class="section-heading">Functional Dependencies</h2>
 
       <div id="fd-manual" class="tab-content">
-        <p class="hint hint--info" style="margin-bottom: 10px;">Upload CSV file or enter FDs manually.</p>
+        <p class="hint hint--info" style="margin-bottom: 10px;">Note: Upload CSV file or enter FDs manually.</p>
         <div id="fd-upload-content">
           <input type="file" name="fdfile" id="fdfile" accept=".txt,.csv" />
         </div>
 
         <hr style="margin: 15px 0; border: 0; border-top: 1px solid #ccc;">
 
-        <button type="button" id="addFdBtn" class="small">+ Add FD</button>
+        <div class="table-actions">
+          <button type="button" id="addFdBtn" class="small">+ Add FD</button>
+          <button type="button" id="clearFdRowsBtn" class="small danger">
+            Delete Rows
+          </button>
+        </div>
         <div class="table-scroll-wrapper">
           <table id="fdTable" class="data-grid">
             <thead><tr><th>#</th><th>X</th><th>→</th><th>Y</th><th>Del</th></tr></thead>
             <tbody></tbody>
           </table>
-          <div class="hint hint--info">Please enter one FD per line, format: X→Y.</div>
+          <div class="hint hint--info">Note: Please enter one FD per line, format: X→Y.</div>
         </div>
       </div>
     </div>
@@ -112,6 +130,8 @@
   const restoredInputData = /*[[${restoredInputData}]]*/ null;
   const restoredInputDataJson = /*[[${restoredInputDataJson}]]*/ null;
   const restoredFdList = /*[[${restoredFdList}]]*/ null;
+  // Plaque mode for conditional UI behavior
+  window.plaqueMode = /*[[${plaqueMode}]]*/ 'enabled';
   /*]]>*/
 
 

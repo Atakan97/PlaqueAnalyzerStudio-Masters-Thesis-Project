@@ -55,7 +55,8 @@
       </table>
     </div>
 
-    <div th:if="${ricMatrix != null}" class="table-wrapper" style="margin-bottom: 30px;">
+    <!-- WITH-PLAQUE mode: Show RIC visualization -->
+    <div th:if="${ricMatrix != null and plaqueMode == 'enabled'}" class="table-wrapper" style="margin-bottom: 30px;">
       <h3 class="result-section-title">Calculation Results:</h3>
 
       <table id="initialCalcTable" class="data-grid">
@@ -98,16 +99,36 @@
         Return to Input
       </button>
     </div>
+
+    <!-- NO-PLAQUE mode: Show plain data table without RIC visualization -->
+    <div th:if="${parsedInputData != null and plaqueMode == 'disabled'}" class="table-wrapper" style="margin-bottom: 30px;">
+      <h3 class="result-section-title">Data Table (Without Plaque):</h3>
+      <table class="data-grid">
+        <thead>
+        <tr>
+          <th th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
+              th:text="${i}"></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${parsedInputData}">
+          <td th:each="cell : ${row}" th:text="${cell}">val</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
 <form th:action="@{/normalization}" method="get" class="start-normalize-form">
+    <input type="hidden" name="id" th:value="${computationId}" />
     <button type="submit" class="button pill">Start Normalization</button>
   </form>
 
   <script th:inline="javascript">
     /*<![CDATA[*/
     window.ricMatrix = /*[[${ricMatrix}]]*/ [];
+    window.plaqueMode = /*[[${plaqueMode}]]*/ 'enabled';
     // Moving transitive closure FDs to JavaScript
     window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
     // Number of duplicate tuples removed

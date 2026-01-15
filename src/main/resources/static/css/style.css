@@ -221,9 +221,33 @@ body {
     margin-top: 15px;
 }
 
+.table-header-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
 .table-scroll-wrapper .data-grid {
     margin-top: 0;
     min-width: max-content;
+}
+
+.table-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.fd-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
 }
 
 /* Tab bar settings */
@@ -432,6 +456,45 @@ input[type="file"]::file-selector-button:hover {
 .small:active {
     transform: translateY(1px);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.small.danger {
+    background-color: #dc2626;
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 6px 10px -2px rgba(220, 38, 38, 0.4);
+}
+
+.small.danger:hover {
+    background-color: #b91c1c;
+    box-shadow: 0 8px 14px -3px rgba(185, 28, 28, 0.5);
+}
+
+.small.danger:active {
+    background-color: #991b1b;
+    box-shadow: 0 3px 6px rgba(153, 27, 27, 0.4);
+}
+
+.small.ghost {
+    background-color: transparent;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    box-shadow: none;
+}
+
+.small.ghost:hover {
+    background-color: #e2e8f0;
+    color: #1e293b;
+}
+
+.small.ghost.danger {
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+.small.ghost.danger:hover {
+    background-color: #fee2e2;
+    color: #b91c1c;
 }
 
 .column-controls .small {
@@ -1126,6 +1189,34 @@ input[type="file"]::file-selector-button:hover {
     margin: 0;
     font-size: 1.8em;
 }
+
+/* Plaque Mode Badge Styles */
+.plaque-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: all 0.3s ease;
+}
+
+.plaque-mode-enabled {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(37, 99, 235, 0.12));
+    border: 2px solid #3b82f6;
+    color: #1e40af;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+}
+
+.plaque-mode-disabled {
+    background: linear-gradient(135deg, rgba(148, 163, 184, 0.12), rgba(100, 116, 139, 0.12));
+    border: 2px solid #94a3b8;
+    color: #475569;
+    box-shadow: 0 2px 8px rgba(148, 163, 184, 0.2);
+}
+
 #timer {
     font-size: 1.1rem;
     background-color: #e2e8f0;

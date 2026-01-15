@@ -6,6 +6,7 @@ import java.util.List;
  // Wrapper request to submit multiple DecomposeRequest objects (one per decomposed table)
  // Reuse DecomposeRequest for per-table options (columns, manualData, flags)
 public class DecomposeAllRequest {
+	private String computationId;
 	private List<DecomposeRequest> tables;
 	// optional global flags
 	private boolean losslessJoin;
@@ -19,6 +20,9 @@ public class DecomposeAllRequest {
 	private List<Integer> baseColumns;
 
 	public DecomposeAllRequest() {}
+
+	public String getComputationId() { return computationId; }
+	public void setComputationId(String computationId) { this.computationId = computationId; }
 
 	public List<DecomposeRequest> getTables() { return tables; }
 	public void setTables(List<DecomposeRequest> tables) { this.tables = tables; }

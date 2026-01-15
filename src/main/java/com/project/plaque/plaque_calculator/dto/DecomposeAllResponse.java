@@ -16,6 +16,10 @@ public class DecomposeAllResponse {
 	//  order used to build globalManualRows / globalRic columns
 	private List<Integer> unionCols = new ArrayList<>();
 	private boolean isBCNFDecomposition;
+	// List of FDs that were lost in decomposition (not preserved)
+	private List<String> missingFDs = new ArrayList<>();
+	// Detailed information about lossless-join test
+	private LosslessJoinDetail ljDetails;
 
 
 
@@ -44,8 +48,26 @@ public class DecomposeAllResponse {
 
 	public boolean isBCNFDecomposition() {
 		return isBCNFDecomposition;
-	}public void setBCNFDecomposition(boolean BCNFDecomposition) {
+	}
+
+	public void setBCNFDecomposition(boolean BCNFDecomposition) {
 		isBCNFDecomposition = BCNFDecomposition;
 	}
-}
 
+	public List<String> getMissingFDs() {
+		return missingFDs;
+	}
+
+	public void setMissingFDs(List<String> missingFDs) {
+		this.missingFDs = missingFDs == null ? new ArrayList<>() : missingFDs;
+	}
+
+	public LosslessJoinDetail getLjDetails() {
+		return ljDetails;
+	}
+
+	public void setLjDetails(LosslessJoinDetail ljDetails) {
+		this.ljDetails = ljDetails;
+	}
+
+}

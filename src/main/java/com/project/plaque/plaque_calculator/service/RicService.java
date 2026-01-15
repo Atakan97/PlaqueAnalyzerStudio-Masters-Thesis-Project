@@ -192,7 +192,7 @@ public class RicService {
 		addAttempt(attempts, seen, new RicAttempt(true, 100_000, 10));
 		addAttempt(attempts, seen, new RicAttempt(true, 10_000, 10));
 		// MC 1000 samples with extended timeout (30s) as last resort for large datasets
-		addAttempt(attempts, seen, new RicAttempt(true, 1_000, 30));
+		addAttempt(attempts, seen, new RicAttempt(true, 1_000, 30000));
 
 		return attempts;
 	}
@@ -271,7 +271,12 @@ public class RicService {
 		}
 		List<String> fdsList = new ArrayList<>();
 		if (topLevelFds != null && !topLevelFds.trim().isEmpty()) {
-			String norm = topLevelFds.replace('→', '-').replace("—", "-");
+			String norm = topLevelFds
+					.replace("→", "->")
+					.replace("\u2192", "->")
+					.replaceAll("\\s*,\\s*", ",")
+					.replaceAll("\\s*->\\s*", "->")
+					.replaceAll("-+>", "->");
 			String[] fdParts = norm.split("[;\r\n]+");
 			for (String seg : fdParts) {
 				String tok = seg == null ? "" : seg.trim();

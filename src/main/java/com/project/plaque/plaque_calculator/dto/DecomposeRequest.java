@@ -4,6 +4,7 @@ import java.util.List;
 
 public class DecomposeRequest {
 
+	private String computationId;
 	private String manualData;
 	private List<Integer> columns;
 	private String fds;
@@ -16,6 +17,9 @@ public class DecomposeRequest {
 	public DecomposeRequest() {}
 
 	// Getters & Setters
+	public String getComputationId() { return computationId; }
+	public void setComputationId(String computationId) { this.computationId = computationId; }
+
 	public String getManualData() { return manualData; }
 	public void setManualData(String manualData) { this.manualData = manualData; }
 

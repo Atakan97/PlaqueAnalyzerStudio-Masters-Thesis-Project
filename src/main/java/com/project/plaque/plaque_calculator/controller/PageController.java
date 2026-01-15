@@ -46,7 +46,20 @@ public class PageController {
 			@RequestParam(value = "fdList", required = false) String fdList,
 			@RequestParam(value = "monteCarlo", required = false) String monteCarlo,
 			@RequestParam(value = "samples", required = false) String samples,
+			@RequestParam(value = "mode", required = false) String mode,
+			HttpSession session,
 			Model model) {
+
+		// Handle plaque mode selection
+		String plaqueMode = "enabled"; // Default
+		if ("no-plaque".equals(mode)) {
+			plaqueMode = "disabled";
+		} else if ("with-plaque".equals(mode)) {
+			plaqueMode = "enabled";
+		}
+		// Store in session for entire user journey
+		session.setAttribute("plaqueMode", plaqueMode);
+		model.addAttribute("plaqueMode", plaqueMode);
 
 		// Prefer JSON format for restoration (avoids semicolon splitting issues)
 		if (inputDataJson != null && !inputDataJson.isEmpty()) {
@@ -76,7 +89,20 @@ public class PageController {
 			@RequestParam(value = "fdList", required = false) String fdList,
 			@RequestParam(value = "monteCarlo", required = false) String monteCarlo,
 			@RequestParam(value = "samples", required = false) String samples,
+			@RequestParam(value = "mode", required = false) String mode,
+			HttpSession session,
 			Model model) {
+
+		// Handle plaque mode selection (maintain existing mode if not specified)
+		if (mode != null) {
+			String plaqueMode = "no-plaque".equals(mode) ? "disabled" : "enabled";
+			session.setAttribute("plaqueMode", plaqueMode);
+			model.addAttribute("plaqueMode", plaqueMode);
+		} else {
+			// Keep existing mode from session
+			String existingMode = (String) session.getAttribute("plaqueMode");
+			model.addAttribute("plaqueMode", existingMode != null ? existingMode : "enabled");
+		}
 
 		// Prefer JSON format for restoration (avoids semicolon splitting issues)
 		if (inputDataJson != null && !inputDataJson.isEmpty()) {
@@ -100,29 +126,38 @@ public class PageController {
 	}
 
 	@GetMapping("/calc-results")
-	public String showCalcResults(HttpSession session, Model model) {
+	public String showCalcResults(
+			@RequestParam(value = "id", required = false) String computationId,
+			HttpSession session,
+			Model model) {
+
+		if (computationId == null || computationId.isEmpty()) {
+			return "redirect:/calc";
+		}
+
+		String prefix = "computation_" + computationId + "_";
 
 		@SuppressWarnings("unchecked")
-		List<String[]> ricMatrix = (List<String[]>) session.getAttribute("calcResultsRicMatrix");
-		Integer ricColCount = (Integer) session.getAttribute("calcResultsRicColCount");
-		String ricJson = (String) session.getAttribute("calcResultsRicJson");
-		String inputData = (String) session.getAttribute("calcResultsInputData");
-		String fdList = (String) session.getAttribute("calcResultsFdList");
+		List<String[]> ricMatrix = (List<String[]>) session.getAttribute(prefix + "calcResultsRicMatrix");
+		Integer ricColCount = (Integer) session.getAttribute(prefix + "calcResultsRicColCount");
+		String ricJson = (String) session.getAttribute(prefix + "calcResultsRicJson");
+		String inputData = (String) session.getAttribute(prefix + "calcResultsInputData");
+		String fdList = (String) session.getAttribute(prefix + "calcResultsFdList");
 		@SuppressWarnings("unchecked")
-		List<String> ricSteps = (List<String>) session.getAttribute("calcResultsRicSteps");
-		String ricFinalStrategy = (String) session.getAttribute("calcResultsRicFinalStrategy");
-		Boolean monteCarloSelected = (Boolean) session.getAttribute("calcResultsMonteCarloSelected");
-		Integer monteCarloSamples = (Integer) session.getAttribute("calcResultsMonteCarloSamples");
+		List<String> ricSteps = (List<String>) session.getAttribute(prefix + "calcResultsRicSteps");
+		String ricFinalStrategy = (String) session.getAttribute(prefix + "calcResultsRicFinalStrategy");
+		Boolean monteCarloSelected = (Boolean) session.getAttribute(prefix + "calcResultsMonteCarloSelected");
+		Integer monteCarloSamples = (Integer) session.getAttribute(prefix + "calcResultsMonteCarloSamples");
 		@SuppressWarnings("unchecked")
-		List<String> allFdStrings = (List<String>) session.getAttribute("calcResultsAllFdStrings");
+		List<String> allFdStrings = (List<String>) session.getAttribute(prefix + "calcResultsAllFdStrings");
 		@SuppressWarnings("unchecked")
-		List<String> transitiveFds = (List<String>) session.getAttribute("calcResultsTransitiveFds");
-		Integer duplicatesRemoved = (Integer) session.getAttribute("duplicatesRemoved");
+		List<String> transitiveFds = (List<String>) session.getAttribute(prefix + "calcResultsTransitiveFds");
+		Integer duplicatesRemoved = (Integer) session.getAttribute(prefix + "duplicatesRemoved");
 
 		// Get properly parsed table data from session (parsed by CsvParsingUtil)
-		String initialCalcTableJson = (String) session.getAttribute("initialCalcTableJson");
+		String initialCalcTableJson = (String) session.getAttribute(prefix + "initialCalcTableJson");
 		@SuppressWarnings("unchecked")
-		List<List<String>> parsedInputData = (List<List<String>>) session.getAttribute("originalTuples");
+		List<List<String>> parsedInputData = (List<List<String>>) session.getAttribute(prefix + "originalTuples");
 
 		if (ricMatrix == null || inputData == null) {
 			return "redirect:/calc";
@@ -133,7 +168,7 @@ public class PageController {
 		model.addAttribute("ricJson", ricJson != null ? ricJson : "[]");
 		model.addAttribute("inputData", inputData);
 		// Add JSON format for proper restoration in calc.html (avoids semicolon splitting issues)
-		String inputDataJson = (String) session.getAttribute("calcResultsInputDataJson");
+		String inputDataJson = (String) session.getAttribute(prefix + "calcResultsInputDataJson");
 		model.addAttribute("inputDataJson", inputDataJson != null ? inputDataJson : "[]");
 		model.addAttribute("fdList", fdList != null ? fdList : "");
 		model.addAttribute("ricSteps", ricSteps != null ? ricSteps : List.of());
@@ -146,6 +181,11 @@ public class PageController {
 		// Add properly parsed input data for display
 		model.addAttribute("parsedInputData", parsedInputData != null ? parsedInputData : List.of());
 		model.addAttribute("initialCalcTableJson", initialCalcTableJson != null ? initialCalcTableJson : "[]");
+		model.addAttribute("computationId", computationId);
+
+		// Add plaqueMode to model
+		String plaqueMode = (String) session.getAttribute(prefix + "plaqueMode");
+		model.addAttribute("plaqueMode", plaqueMode != null ? plaqueMode : "enabled");
 
 		return "calc-results";
 	}
@@ -157,29 +197,39 @@ public class PageController {
 	 *     - currentRelationsFdsJson       : List<String> (per-table FDs)
 	 */
 	@GetMapping("/normalization")
-	public String normalizePage(HttpSession session, Model model) {
+	public String normalizePage(
+			@RequestParam(value = "id", required = false) String computationId,
+			HttpSession session,
+			Model model) {
+
+		if (computationId == null || computationId.isEmpty()) {
+			return "redirect:/calc";
+		}
+
+		String prefix = "computation_" + computationId + "_";
+
 		Boolean resetRequested = (Boolean) session.getAttribute(RESET_SESSION_KEY);
 		boolean initialStatePopulated = false;
 
-		Long startTime = normalizationController.setAndGetNormalizationStartTime(session);
+		Long startTime = normalizationController.setAndGetNormalizationStartTime(session, computationId);
 		model.addAttribute("normalizationStartTimeMs", startTime);
 
-		Boolean alreadyBcnfFlag = (Boolean) session.getAttribute("alreadyBcnf");
+		Boolean alreadyBcnfFlag = (Boolean) session.getAttribute(prefix + "alreadyBcnf");
 		model.addAttribute("alreadyBcnf", alreadyBcnfFlag != null && alreadyBcnfFlag);
 
 		@SuppressWarnings("unchecked")
 		// Get history list from session
-		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute("normalizationHistory");
+		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(prefix + "normalizationHistory");
 
 		boolean canReturn = history != null && !history.isEmpty();
 		model.addAttribute("canReturn", canReturn);
 
 		@SuppressWarnings("unchecked")
-		Map<String, Object> restoreState = (Map<String, Object>) session.getAttribute(RESTORE_SESSION_KEY);
-		Object restoreFlag = session.getAttribute("usingDecomposedAsOriginal");
+		Map<String, Object> restoreState = (Map<String, Object>) session.getAttribute(prefix + RESTORE_SESSION_KEY);
+		Object restoreFlag = session.getAttribute(prefix + "usingDecomposedAsOriginal");
 		boolean restoreRequested = restoreFlag instanceof Boolean && (Boolean) restoreFlag && restoreState != null;
 		if (Boolean.TRUE.equals(resetRequested)) {
-			populateInitialNormalization(session, model);
+			populateInitialNormalization(session, model, computationId);
 			session.removeAttribute(RESET_SESSION_KEY);
 			initialStatePopulated = true;
 		}
@@ -196,15 +246,15 @@ public class PageController {
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
 
 			// Calculate normal forms for each relation
-			List<String> normalForms = calculateNormalFormsForRelations(restoreState, session);
+			List<String> normalForms = calculateNormalFormsForRelations(restoreState, session, computationId);
 			model.addAttribute("currentRelationsNormalFormsJson", gson.toJson(normalForms));
 
 			model.addAttribute("initialCalcTableJson", "[]");
 			model.addAttribute("ricJson", "[]");
 
 			// make sure we don't reuse stale state on future loads
-			session.removeAttribute(RESTORE_SESSION_KEY);
-			session.removeAttribute("usingDecomposedAsOriginal");
+			session.removeAttribute(prefix + RESTORE_SESSION_KEY);
+			session.removeAttribute(prefix + "usingDecomposedAsOriginal");
 		} else if (history != null && !history.isEmpty()) {
 			Map<String, Object> currentState = history.get(history.size() - 1);
 			System.out.println("[PageController] Using history tail state: " + gson.toJson(currentState));
@@ -220,25 +270,25 @@ public class PageController {
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(currentState.get("manualPerTable")));
 
 			// Calculate normal forms for each relation
-			List<String> normalForms = calculateNormalFormsForRelations(currentState, session);
+			List<String> normalForms = calculateNormalFormsForRelations(currentState, session, computationId);
 			model.addAttribute("currentRelationsNormalFormsJson", gson.toJson(normalForms));
 
 			model.addAttribute("initialCalcTableJson", "[]");
 			model.addAttribute("ricJson", "[]");
 		} else if (!initialStatePopulated) {
-			populateInitialNormalization(session, model);
+			populateInitialNormalization(session, model, computationId);
 		}
 
 		// Get the original FD strings for display (in index format like "1,2,3→5")
 		@SuppressWarnings("unchecked")
-		List<String> originalFdStringsForDisplay = (List<String>) session.getAttribute("originalFdStringsForDisplay");
+		List<String> originalFdStringsForDisplay = (List<String>) session.getAttribute(prefix + "originalFdStringsForDisplay");
 		if (originalFdStringsForDisplay == null) {
 			originalFdStringsForDisplay = new ArrayList<>();
 		}
 
 		// Get transitive FD strings for display (in index format)
 		@SuppressWarnings("unchecked")
-		List<String> transitiveFdStringsForDisplay = (List<String>) session.getAttribute("transitiveFdStringsForDisplay");
+		List<String> transitiveFdStringsForDisplay = (List<String>) session.getAttribute(prefix + "transitiveFdStringsForDisplay");
 		if (transitiveFdStringsForDisplay == null) {
 			transitiveFdStringsForDisplay = new ArrayList<>();
 		}
@@ -248,21 +298,28 @@ public class PageController {
 		// Only derived ones will be shown in red
 		model.addAttribute("fdInferred", transitiveFdStringsForDisplay);
 		model.addAttribute("transitiveFdStrings", transitiveFdStringsForDisplay);
+		model.addAttribute("computationId", computationId);
+
+		// Add plaqueMode to model
+		String plaqueMode = (String) session.getAttribute(prefix + "plaqueMode");
+		model.addAttribute("plaqueMode", plaqueMode != null ? plaqueMode : "enabled");
 
 		return "normalization";
 	}
 
-	private void populateInitialNormalization(HttpSession session, Model model) {
-		String initJson = (String) session.getAttribute("initialCalcTableJson");
-		String ricJsonInit = (String) session.getAttribute("originalTableJson");
+	private void populateInitialNormalization(HttpSession session, Model model, String computationId) {
+		String prefix = "computation_" + computationId + "_";
+
+		String initJson = (String) session.getAttribute(prefix + "initialCalcTableJson");
+		String ricJsonInit = (String) session.getAttribute(prefix + "originalTableJson");
 
 		// Calculate original table's normal form
 		String originalNormalForm = "1NF"; // Default
 		try {
 			@SuppressWarnings("unchecked")
-			List<FD> originalFDs = (List<FD>) session.getAttribute("originalFDs");
+			List<FD> originalFDs = (List<FD>) session.getAttribute(prefix + "originalFDs");
 			@SuppressWarnings("unchecked")
-			List<String> originalAttrOrder = (List<String>) session.getAttribute("originalAttrOrder");
+			List<String> originalAttrOrder = (List<String>) session.getAttribute(prefix + "originalAttrOrder");
 
 			if (originalFDs != null && originalAttrOrder != null && !originalAttrOrder.isEmpty()) {
 				Set<String> attributes = new LinkedHashSet<>(originalAttrOrder);
@@ -286,7 +343,8 @@ public class PageController {
 	}
 
 	// Calculate normal forms for each relation in the state
-	private List<String> calculateNormalFormsForRelations(Map<String, Object> state, HttpSession session) {
+	private List<String> calculateNormalFormsForRelations(Map<String, Object> state, HttpSession session, String computationId) {
+		String prefix = "computation_" + computationId + "_";
 		List<String> normalForms = new ArrayList<>();
 
 		try {
@@ -295,7 +353,7 @@ public class PageController {
 			@SuppressWarnings("unchecked")
 			List<List<Integer>> columnsPerTable = (List<List<Integer>>) state.get("columnsPerTable");
 			@SuppressWarnings("unchecked")
-			List<String> originalAttrOrder = (List<String>) session.getAttribute("originalAttrOrder");
+			List<String> originalAttrOrder = (List<String>) session.getAttribute(prefix + "originalAttrOrder");
 
 			if (fdsPerTableOriginal == null || columnsPerTable == null) {
 				return normalForms;

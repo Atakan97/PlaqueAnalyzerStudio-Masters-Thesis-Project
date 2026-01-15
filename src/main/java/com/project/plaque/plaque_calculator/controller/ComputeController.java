@@ -49,38 +49,63 @@ public class ComputeController {
 			Model model
 	) {
 
-		clearNormalizationSessionState(session);
+		// Generate unique computation ID
+		String computationId = UUID.randomUUID().toString();
+
+		clearNormalizationSessionState(session, computationId);
 
 		// Converting user's input to safe strings
 		String safeManual = sanitizeManualData(manualData);
 		String safeFds = sanitizeFds(fds);
+
+		// Check plaque mode from session
+		String plaqueMode = (String) session.getAttribute("plaqueMode");
+		boolean skipRic = "disabled".equals(plaqueMode);
 
 		// Call RicService with adaptive Monte Carlo fallbacks so we can degrade
 		// from exact computation to approximations when the external jar hits timeouts.
 		double[][] ricArr = new double[0][0];
 		List<String> ricSteps = new ArrayList<>();
 		String finalStrategy = null;
-		try {
-			RicService.RicComputationResult result = ricService.computeRicAdaptive(safeManual, safeFds, monteCarlo, samples);
-			ricArr = result.matrix();
-			ricSteps = result.steps();
-			finalStrategy = result.finalStrategy();
-		} catch (RicService.RicComputationException adaptiveEx) {
-			ricSteps = adaptiveEx.getSteps();
-			model.addAttribute("ricError", "Error while calculating information content: " + adaptiveEx.getMessage());
-		} catch (Exception ex) {
-			System.err.println("[ComputeController] Error during RIC computation: " + ex.getMessage());
-			model.addAttribute("ricError", "Error while calculating information content: " + ex.getMessage());
+
+		if (!skipRic) {
+			// WITH-PLAQUE mode: Perform RIC computation
+			try {
+				RicService.RicComputationResult result = ricService.computeRicAdaptive(safeManual, safeFds, monteCarlo, samples);
+				ricArr = result.matrix();
+				ricSteps = result.steps();
+				finalStrategy = result.finalStrategy();
+			} catch (RicService.RicComputationException adaptiveEx) {
+				ricSteps = adaptiveEx.getSteps();
+				model.addAttribute("ricError", "Error while calculating information content: " + adaptiveEx.getMessage());
+			} catch (Exception ex) {
+				System.err.println("[ComputeController] Error during RIC computation: " + ex.getMessage());
+				model.addAttribute("ricError", "Error while calculating information content: " + ex.getMessage());
+			}
+		} else {
+			// NO-PLAQUE mode: Skip RIC computation
+			ricSteps.add("RIC computation skipped (NO-PLAQUE mode)");
+			finalStrategy = "SKIPPED";
+			System.out.println("[ComputeController] NO-PLAQUE mode: Skipping RIC computation");
 		}
 		// Persist the execution trail in both model and session so UI pages and subsequent
 		// requests (e.g., decomposition flows) can display the full timeline of attempts.
 		model.addAttribute("ricSteps", ricSteps);
 		model.addAttribute("ricFinalStrategy", finalStrategy);
-		session.setAttribute("ricComputationSteps", ricSteps);
-		session.setAttribute("ricFinalStrategy", finalStrategy);
 
-		persistResults(session, model, safeManual, safeFds, ricArr, ricSteps, finalStrategy, monteCarlo, samples, duplicatesRemoved);
-		return "calc-results";
+		persistResults(session, model, safeManual, safeFds, ricArr, ricSteps, finalStrategy, monteCarlo, samples, duplicatesRemoved, computationId);
+
+		// Add computation ID to model for redirect
+		model.addAttribute("computationId", computationId);
+
+		// NO-PLAQUE mode: Skip calc-results page, go directly to normalization
+		if (skipRic) {
+			System.out.println("[ComputeController] NO-PLAQUE mode: Redirecting directly to normalization");
+			return "redirect:/normalization?id=" + computationId;
+		}
+
+		// WITH-PLAQUE mode: Show calc-results page
+		return "redirect:/calc-results?id=" + computationId;
 	}
 
 	@PostMapping(value = "/stream-init", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -137,7 +162,10 @@ public class ComputeController {
 			}
 		}
 
-		clearNormalizationSessionState(session);
+		// Generate unique computation ID early for this stream computation
+		String computationId = UUID.randomUUID().toString();
+		clearNormalizationSessionState(session, computationId);
+
 		String ricManual;      // RIC format for JAR (commas replaced with |)
 		String originalManual; // Original format for UI/session
 		String safeFds;
@@ -183,8 +211,8 @@ public class ComputeController {
 		System.out.println("[ComputeController] Validation result: " + (validated.equals("__INCONSISTENT__") ? "INCONSISTENT" : (validated.isEmpty() ? "EMPTY" : "OK, length=" + validated.length())));
 		System.out.flush();
 
-		// Use a longer timeout (5 minutes) for large computations
-		SseEmitter emitter = new SseEmitter(5 * 60 * 1000L);
+		// Use without limit for large computations
+		SseEmitter emitter = new SseEmitter(0L);
 
 		if (validated.equals("__INCONSISTENT__")) {
 			sendEvent(emitter, "error", Map.of("message", "Inconsistent column counts detected across rows."));
@@ -223,18 +251,35 @@ public class ComputeController {
 				} catch (Exception ignored) {
 				}
 			};
+
+			// Check plaque mode from session
+			String plaqueMode = (String) session.getAttribute("plaqueMode");
+			boolean skipRic = "disabled".equals(plaqueMode);
+
 			try {
-				System.out.println("[ComputeController] Starting RIC computation...");
-				// Use RIC format for JAR computation
-				RicService.RicComputationResult result = ricService.computeRicAdaptive(finalRicManual, safeFds, mc, smp, progressCallback);
-				System.out.println("[ComputeController] RIC computation completed, persisting results...");
-				List<String> finalSteps = result.steps() != null ? result.steps() : progressSteps;
-				// Use ORIGINAL format for session storage (so UI shows correct values)
-				persistResults(session, null, finalOriginalManual, safeFds, result.matrix(), finalSteps, result.finalStrategy(), mc, smp, duplicatesRemoved);
-				System.out.println("[ComputeController] Results persisted, sending complete event...");
-				sendEvent(emitter, "complete", Map.of("finalStrategy", result.finalStrategy(), "redirectUrl", "/calc-results"));
-				emitter.complete();
-				System.out.println("[ComputeController] Stream completed successfully.");
+				if (!skipRic) {
+					// WITH-PLAQUE mode: Perform RIC computation
+					System.out.println("[ComputeController] Starting RIC computation...");
+					// Use RIC format for JAR computation
+					RicService.RicComputationResult result = ricService.computeRicAdaptive(finalRicManual, safeFds, mc, smp, progressCallback);
+					System.out.println("[ComputeController] RIC computation completed, persisting results...");
+					List<String> finalSteps = result.steps() != null ? result.steps() : progressSteps;
+					// Use ORIGINAL format for session storage (so UI shows correct values)
+					persistResults(session, null, finalOriginalManual, safeFds, result.matrix(), finalSteps, result.finalStrategy(), mc, smp, duplicatesRemoved, computationId);
+					System.out.println("[ComputeController] Results persisted, sending complete event...");
+					sendEvent(emitter, "complete", Map.of("finalStrategy", result.finalStrategy(), "redirectUrl", "/calc-results?id=" + computationId, "computationId", computationId));
+					emitter.complete();
+					System.out.println("[ComputeController] Stream completed successfully.");
+				} else {
+					// NO-PLAQUE mode: Skip RIC computation
+					System.out.println("[ComputeController] NO-PLAQUE mode: Skipping RIC computation");
+					sendEvent(emitter, "progress", Map.of("message", "NO-PLAQUE mode: Skipping RIC computation"));
+					List<String> skippedSteps = List.of("RIC computation skipped (NO-PLAQUE mode)");
+					persistResults(session, null, finalOriginalManual, safeFds, new double[0][0], skippedSteps, "SKIPPED", mc, smp, duplicatesRemoved, computationId);
+					sendEvent(emitter, "complete", Map.of("finalStrategy", "SKIPPED", "redirectUrl", "/calc-results?id=" + computationId, "computationId", computationId));
+					emitter.complete();
+					System.out.println("[ComputeController] NO-PLAQUE stream completed.");
+				}
 			} catch (RicService.RicComputationException adaptiveEx) {
 				System.err.println("[ComputeController] RicComputationException: " + adaptiveEx.getMessage());
 				List<String> steps = adaptiveEx.getSteps() != null ? adaptiveEx.getSteps() : progressSteps;
@@ -260,27 +305,28 @@ public class ComputeController {
 		return Optional.ofNullable(fds).orElse("").trim();
 	}
 
-	private void clearNormalizationSessionState(HttpSession session) {
+	private void clearNormalizationSessionState(HttpSession session, String computationId) {
 		if (session == null) return;
-		session.removeAttribute("normalizationHistory");
-		session.removeAttribute("normalizationRestoreState");
-		session.removeAttribute("usingDecomposedAsOriginal");
-		session.removeAttribute("currentRelationsManual");
-		session.removeAttribute("currentRelationsColumns");
-		session.removeAttribute("currentRelationsFds");
-		session.removeAttribute("currentRelationsRic");
-		session.removeAttribute("currentGlobalRic");
-		session.removeAttribute("currentGlobalManualRows");
-		session.removeAttribute("currentUnionCols");
-		session.removeAttribute("alreadyBcnf");
-		session.removeAttribute("normalizationSessionStart");
-		session.removeAttribute("bcnfSummary");
-		session.removeAttribute("bcnfAttempts");
-		session.removeAttribute("bcnfElapsedTime");
-		session.removeAttribute("bcnfTableCount");
-		session.removeAttribute("bcnfDependencyPreserved");
-		session.removeAttribute("_lastDecomposeResult");
-		session.removeAttribute("_lastBcnfMeta");
+		String prefix = "computation_" + computationId + "_";
+		session.removeAttribute(prefix + "normalizationHistory");
+		session.removeAttribute(prefix + "normalizationRestoreState");
+		session.removeAttribute(prefix + "usingDecomposedAsOriginal");
+		session.removeAttribute(prefix + "currentRelationsManual");
+		session.removeAttribute(prefix + "currentRelationsColumns");
+		session.removeAttribute(prefix + "currentRelationsFds");
+		session.removeAttribute(prefix + "currentRelationsRic");
+		session.removeAttribute(prefix + "currentGlobalRic");
+		session.removeAttribute(prefix + "currentGlobalManualRows");
+		session.removeAttribute(prefix + "currentUnionCols");
+		session.removeAttribute(prefix + "alreadyBcnf");
+		session.removeAttribute(prefix + "normalizationSessionStart");
+		session.removeAttribute(prefix + "bcnfSummary");
+		session.removeAttribute(prefix + "bcnfAttempts");
+		session.removeAttribute(prefix + "bcnfElapsedTime");
+		session.removeAttribute(prefix + "bcnfTableCount");
+		session.removeAttribute(prefix + "bcnfDependencyPreserved");
+		session.removeAttribute(prefix + "_lastDecomposeResult");
+		session.removeAttribute(prefix + "_lastBcnfMeta");
 	}
 
 	private void persistResults(HttpSession session,
@@ -292,7 +338,8 @@ public class ComputeController {
 						 String finalStrategy,
 						 boolean monteCarlo,
 						 int samples,
-						 int duplicatesRemoved) {
+						 int duplicatesRemoved,
+						 String computationId) {
 		List<String[]> matrixForModel = convertMatrixToStrings(ricArr);
 		String originalTableJson = gson.toJson(matrixForModel);
 		int ricColCount = matrixForModel.isEmpty() ? 0 : matrixForModel.get(0).length;
@@ -306,24 +353,30 @@ public class ComputeController {
 
 		List<String> safeSteps = steps == null ? List.of() : List.copyOf(steps);
 
-		session.setAttribute("originalTableJson", originalTableJson);
-		session.setAttribute("calcResultsRicMatrix", matrixForModel);
-		session.setAttribute("calcResultsRicColCount", ricColCount);
-		session.setAttribute("calcResultsRicJson", originalTableJson);
-		session.setAttribute("ricComputationSteps", safeSteps);
-		session.setAttribute("ricFinalStrategy", finalStrategy);
-		session.setAttribute("fdList", safeFds);
-		session.setAttribute("calcResultsInputData", safeManual);
+		String prefix = "computation_" + computationId + "_";
+
+		// Store plaqueMode in session for persistence across pages
+		String plaqueMode = (String) session.getAttribute("plaqueMode");
+		session.setAttribute(prefix + "plaqueMode", plaqueMode != null ? plaqueMode : "enabled");
+
+		session.setAttribute(prefix + "originalTableJson", originalTableJson);
+		session.setAttribute(prefix + "calcResultsRicMatrix", matrixForModel);
+		session.setAttribute(prefix + "calcResultsRicColCount", ricColCount);
+		session.setAttribute(prefix + "calcResultsRicJson", originalTableJson);
+		session.setAttribute(prefix + "ricComputationSteps", safeSteps);
+		session.setAttribute(prefix + "ricFinalStrategy", finalStrategy);
+		session.setAttribute(prefix + "fdList", safeFds);
+		session.setAttribute(prefix + "calcResultsInputData", safeManual);
 		// Also store as JSON for proper restoration in calc.html
 		List<List<String>> parsedData = CsvParsingUtil.parseRows(safeManual);
-		session.setAttribute("calcResultsInputDataJson", gson.toJson(parsedData));
-		session.setAttribute("calcResultsFdList", safeFds);
-		session.setAttribute("calcResultsRicSteps", safeSteps);
-		session.setAttribute("calcResultsRicFinalStrategy", finalStrategy);
-		session.setAttribute("calcResultsMonteCarloSelected", monteCarlo);
-		session.setAttribute("calcResultsMonteCarloSamples", samples);
-		session.setAttribute("alreadyBcnf", alreadyBcnf);
-		session.setAttribute("duplicatesRemoved", duplicatesRemoved);
+		session.setAttribute(prefix + "calcResultsInputDataJson", gson.toJson(parsedData));
+		session.setAttribute(prefix + "calcResultsFdList", safeFds);
+		session.setAttribute(prefix + "calcResultsRicSteps", safeSteps);
+		session.setAttribute(prefix + "calcResultsRicFinalStrategy", finalStrategy);
+		session.setAttribute(prefix + "calcResultsMonteCarloSelected", monteCarlo);
+		session.setAttribute(prefix + "calcResultsMonteCarloSamples", samples);
+		session.setAttribute(prefix + "alreadyBcnf", alreadyBcnf);
+		session.setAttribute(prefix + "duplicatesRemoved", duplicatesRemoved);
 
 		if (model != null) {
 			model.addAttribute("ricMatrix", matrixForModel);
@@ -341,19 +394,19 @@ public class ComputeController {
 
 		List<List<String>> initialCalcTable = buildInitialCalcTable(safeManual);
 		String initJson = gson.toJson(initialCalcTable);
-		session.setAttribute("initialCalcTableJson", initJson);
+		session.setAttribute(prefix + "initialCalcTableJson", initJson);
 
 		List<List<String>> dedupedOriginalTuples = dedupeRows(initialCalcTable);
-		session.setAttribute("originalTuples", dedupedOriginalTuples);
+		session.setAttribute(prefix + "originalTuples", dedupedOriginalTuples);
 
-		session.setAttribute("originalAttrOrder", originalAttrOrder);
-		session.setAttribute("originalAttrIndices", createAttrIndices(originalAttrOrder.size()));
+		session.setAttribute(prefix + "originalAttrOrder", originalAttrOrder);
+		session.setAttribute(prefix + "originalAttrIndices", createAttrIndices(originalAttrOrder.size()));
 
-		session.setAttribute("originalFDs", originalFDs);
+		session.setAttribute(prefix + "originalFDs", originalFDs);
 
 		// Parse original FD strings for display (keep original index format like "1,2,3->5")
 		List<String> originalFdStringsForDisplay = parseOriginalFdStringsForDisplay(safeFds);
-		session.setAttribute("originalFdStringsForDisplay", originalFdStringsForDisplay);
+		session.setAttribute(prefix + "originalFdStringsForDisplay", originalFdStringsForDisplay);
 
 		List<FD> transitiveFDs = fdService.findTransitiveFDs(originalFDs);
 		// For internal use (with attribute names)
@@ -369,11 +422,11 @@ public class ComputeController {
 				.map(FD::toString)
 				.sorted()
 				.collect(Collectors.toList());
-		session.setAttribute("transitiveFdStringsForDisplay", transitiveFdStringsForDisplay);
+		session.setAttribute(prefix + "transitiveFdStringsForDisplay", transitiveFdStringsForDisplay);
 
-		session.setAttribute("fdListWithClosure", String.join(";", distinctSortedList));
-		session.setAttribute("calcResultsAllFdStrings", distinctSortedList);
-		session.setAttribute("calcResultsTransitiveFds", transitiveFdStrings);
+		session.setAttribute(prefix + "fdListWithClosure", String.join(";", distinctSortedList));
+		session.setAttribute(prefix + "calcResultsAllFdStrings", distinctSortedList);
+		session.setAttribute(prefix + "calcResultsTransitiveFds", transitiveFdStrings);
 
 		if (model != null) {
 			model.addAttribute("allFdStringsToShow", distinctSortedList);
@@ -421,10 +474,16 @@ public class ComputeController {
 		if (rows.isEmpty()) {
 			return List.of();
 		}
-		return rows.get(0).stream()
-				.map(cell -> cell == null ? "" : cell.trim())
-				.filter(s -> !s.isEmpty())
-				.collect(Collectors.toList());
+		int maxCols = 0;
+		for (List<String> row : rows) {
+			if (row == null) continue;
+			maxCols = Math.max(maxCols, row.size());
+		}
+		List<String> out = new ArrayList<>(maxCols);
+		for (int i = 1; i <= maxCols; i++) {
+			out.add(String.valueOf(i));
+		}
+		return out;
 	}
 
 	private List<Integer> createAttrIndices(int size) {

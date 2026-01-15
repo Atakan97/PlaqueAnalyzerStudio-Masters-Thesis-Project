@@ -34,9 +34,11 @@ public class NormalizationController {
 	@PostMapping("/continue")
 	public String continueNormalization(@RequestBody Map<String, Object> body, HttpSession session) {
 		logService.info("[NormalizationController] /continue invoked with payload keys=" + body.keySet());
-		// Get the history list from Session, create a new list if it doesn't exist
+		String computationId = body != null && body.get("computationId") != null ? String.valueOf(body.get("computationId")) : null;
+		String prefix = (computationId == null || computationId.isBlank()) ? "" : ("computation_" + computationId + "_");
+
 		@SuppressWarnings("unchecked")
-		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
+		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(prefix + HISTORY_SESSION_KEY);
 		if (history == null) {
 			history = new ArrayList<>();
 		}
@@ -45,22 +47,25 @@ public class NormalizationController {
 		// Append current state (body) to the end of history
 		history.add(body);
 		logService.info("[NormalizationController] history size after append=" + history.size());
-		session.setAttribute(HISTORY_SESSION_KEY, history);
-		session.removeAttribute(RESTORE_SESSION_KEY);
+		session.setAttribute(prefix + HISTORY_SESSION_KEY, history);
+		session.removeAttribute(prefix + RESTORE_SESSION_KEY);
 
 		// Reset attempts counter after a successful advance
-		session.removeAttribute("normalizeAttempts");
+		session.removeAttribute(prefix + "normalizeAttempts");
 
-		session.removeAttribute(RESET_SESSION_KEY);
+		session.removeAttribute(prefix + RESET_SESSION_KEY);
 		// Redirect to normalization page
-		return "redirect:/normalization";
+		return computationId == null || computationId.isBlank()
+			? "redirect:/normalization"
+			: ("redirect:/normalization?id=" + computationId);
 	}
 
-	public Long setAndGetNormalizationStartTime(HttpSession session) {
-		Long startTime = (Long) session.getAttribute(START_TIME_SESSION_KEY);
+	public Long setAndGetNormalizationStartTime(HttpSession session, String computationId) {
+		String prefix = "computation_" + computationId + "_";
+		Long startTime = (Long) session.getAttribute(prefix + START_TIME_SESSION_KEY);
 		if (startTime == null) {
 			startTime = System.currentTimeMillis();
-			session.setAttribute(START_TIME_SESSION_KEY, startTime);
+			session.setAttribute(prefix + START_TIME_SESSION_KEY, startTime);
 		}
 		return startTime;
 	}
@@ -74,7 +79,8 @@ public class NormalizationController {
 		try {
 			Integer tableCount = (Integer) session.getAttribute("bcnfTableCount");
 			Boolean dependencyPreserved = (Boolean) session.getAttribute("bcnfDependencyPreserved");
-			logService.logBcnfSuccess(userName, attempts, elapsedTime, tableCount, dependencyPreserved);
+			String plaqueMode = (String) session.getAttribute("plaqueMode");
+			logService.logBcnfSuccess(userName, attempts, elapsedTime, tableCount, dependencyPreserved, plaqueMode);
 			session.removeAttribute("bcnfTableCount");
 			session.removeAttribute("bcnfDependencyPreserved");
 			return ResponseEntity.ok().build();
@@ -90,6 +96,12 @@ public class NormalizationController {
 			return ResponseEntity.badRequest().body("BCNF data payload is empty.");
 		}
 		Map<String, Object> summaryData = new HashMap<>(body);
+
+		// Extract and store computationId
+		String computationId = body.get("computationId") != null ? String.valueOf(body.get("computationId")) : null;
+		if (computationId != null && !computationId.isEmpty() && !"null".equals(computationId)) {
+			summaryData.put("computationId", computationId);
+		}
 
 		Number attemptsFromSession = (Number) session.getAttribute("bcnfAttempts");
 		if (attemptsFromSession != null) {
@@ -148,6 +160,14 @@ public class NormalizationController {
 		model.addAttribute("bcnfAttempts", attemptsNumber != null ? attemptsNumber.intValue() : 0);
 		model.addAttribute("bcnfElapsedSeconds", elapsedNumber != null ? elapsedNumber.longValue() : 0L);
 
+		// Add computationId to model for navigation
+		String computationId = summary.get("computationId") != null ? String.valueOf(summary.get("computationId")) : null;
+		model.addAttribute("computationId", computationId);
+
+		// Add plaqueMode to model
+		String plaqueMode = (String) session.getAttribute("plaqueMode");
+		model.addAttribute("plaqueMode", plaqueMode != null ? plaqueMode : "enabled");
+
 		return "bcnf-summary";
 	}
 
@@ -180,37 +200,46 @@ public class NormalizationController {
 	}
 
 	@GetMapping("/previous")
-	public String returnToPrevious(HttpSession session) {
+	public String returnToPrevious(@RequestParam(value = "id", required = false) String computationId, HttpSession session) {
+		String prefix = (computationId == null || computationId.isBlank()) ? "" : ("computation_" + computationId + "_");
 		@SuppressWarnings("unchecked")
-		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
+		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(prefix + HISTORY_SESSION_KEY);
 		logService.info("[NormalizationController] /previous invoked. history size=" + (history == null ? 0 : history.size()));
 		if (history == null || history.isEmpty()) {
-			session.setAttribute(RESET_SESSION_KEY, Boolean.TRUE);
+			session.setAttribute(prefix + RESET_SESSION_KEY, Boolean.TRUE);
 			logService.info("[NormalizationController] history empty. Trigger reset state.");
-			return "redirect:/normalization";
+			return computationId == null || computationId.isBlank()
+				? "redirect:/normalization"
+				: ("redirect:/normalization?id=" + computationId);
 		}
 
 		List<Map<String, Object>> updatedHistory = new ArrayList<>(history);
 		Map<String, Object> poppedState = updatedHistory.remove(updatedHistory.size() - 1);
 		logService.info("[NormalizationController] popped state. new history size=" + updatedHistory.size());
-		session.setAttribute(HISTORY_SESSION_KEY, updatedHistory);
+		session.setAttribute(prefix + HISTORY_SESSION_KEY, updatedHistory);
 
 		Map<String, Object> restoreState = poppedState != null ? new HashMap<>(poppedState) : null;
 
 		if (restoreState != null) {
-			session.setAttribute(RESTORE_SESSION_KEY, restoreState);
-			session.setAttribute("usingDecomposedAsOriginal", Boolean.TRUE);
+			session.setAttribute(prefix + RESTORE_SESSION_KEY, restoreState);
+			session.setAttribute(prefix + "usingDecomposedAsOriginal", Boolean.TRUE);
 			logService.info("[NormalizationController] restoreState keys=" + restoreState.keySet());
 		} else {
 			logService.info("[NormalizationController] history exhausted after pop; resetting normalization state.");
-			session.setAttribute(RESET_SESSION_KEY, Boolean.TRUE);
-			clearRestoreState(session);
+			session.setAttribute(prefix + RESET_SESSION_KEY, Boolean.TRUE);
+			clearRestoreState(session, prefix);
 		}
-		return "redirect:/normalization";
+		return computationId == null || computationId.isBlank()
+			? "redirect:/normalization"
+			: ("redirect:/normalization?id=" + computationId);
+	}
+
+	private void clearRestoreState(HttpSession session, String prefix) {
+		session.removeAttribute(prefix + "usingDecomposedAsOriginal");
+		session.removeAttribute(prefix + RESTORE_SESSION_KEY);
 	}
 
 	private void clearRestoreState(HttpSession session) {
-		session.removeAttribute("usingDecomposedAsOriginal");
-		session.removeAttribute(RESTORE_SESSION_KEY);
+		clearRestoreState(session, "");
 	}
 }

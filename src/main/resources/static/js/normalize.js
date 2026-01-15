@@ -1,4 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Persist computationId in sessionStorage to survive page reloads
+    if (window.computationId && window.computationId !== 'null') {
+        sessionStorage.setItem('lastComputationId', window.computationId);
+    } else if (!window.computationId || window.computationId === 'null') {
+        const stored = sessionStorage.getItem('lastComputationId');
+        if (stored) {
+            window.computationId = stored;
+            console.log('Restored computationId from sessionStorage:', stored);
+        }
+    }
+
     // UI elements and state
     const elapsedEl   = document.getElementById('elapsed');
     const attemptEl   = document.getElementById('attemptCount');
@@ -255,19 +266,24 @@ document.addEventListener('DOMContentLoaded', () => {
             row.forEach((val, c) => {
                 const td = tr.insertCell();
                 td.textContent = val;
-                const ricVal = parseFloat(ricMatrix[r]?.[c]);
-                if (!isNaN(ricVal) && ricVal < 1) {
-                    td.classList.add('plaque-cell');
-                    td.style.backgroundColor = getPlaqueColorFn(ricVal);
-                    if (ricVal < 0.5) {
-                        td.classList.add('plaque-light-text');
+
+                // Only apply plaque coloring if enabled
+                if (window.plaqueMode === 'enabled') {
+                    const ricVal = parseFloat(ricMatrix[r]?.[c]);
+                    if (!isNaN(ricVal) && ricVal < 1) {
+                        td.classList.add('plaque-cell');
+                        td.style.backgroundColor = getPlaqueColorFn(ricVal);
+                        if (ricVal < 0.5) {
+                            td.classList.add('plaque-light-text');
+                        } else {
+                            td.classList.remove('plaque-light-text');
+                        }
                     } else {
+                        td.style.backgroundColor = '';
                         td.classList.remove('plaque-light-text');
                     }
-                } else {
-                    td.style.backgroundColor = '';
-                    td.classList.remove('plaque-light-text');
                 }
+
                 td.dataset.origIdx = c;
             });
         });
@@ -284,6 +300,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyRicColoring(tableEl) {
+        // Skip if plaque mode is disabled
+        if (window.plaqueMode !== 'enabled') return;
+
         if (!tableEl || !ricMatrix || !ricMatrix.length) return;
         const tbody = tableEl.tBodies[0];
         if (!tbody) return;
@@ -341,8 +360,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const originalReturnBtn = document.getElementById('originalReturnBtn');
 
     if (originalShowRicBtn && originalReturnBtn) {
-        if (ricMatrix && ricMatrix.length) {
+        // Only show RIC button if plaque mode is enabled
+        if (window.plaqueMode === 'enabled' && ricMatrix && ricMatrix.length) {
             originalShowRicBtn.style.display = 'inline-block';
+        } else {
+            originalShowRicBtn.style.display = 'none';
         }
         originalShowRicBtn.addEventListener('click', () => {
             origTable.style.display = 'none';
@@ -510,6 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const globalSamples = mcSamplesInput ? parseInt(mcSamplesInput.value || '0', 10) : 0;
 
         const payload = {
+            computationId: window.computationId,
             columns: cols,
             manualData: manualData,
             fds: fdsPayloadString,
@@ -672,12 +695,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (!isNaN(parsed)) ricVal = parsed;
                         }
 
-                        if (!isNaN(ricVal) && ricVal < 1) {
-                            td.classList.add('plaque-cell');
-                            const lightness = 10 + 90 * ricVal;
-                            td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                        // Only apply plaque coloring if enabled
+                        if (window.plaqueMode === 'enabled') {
+                            if (!isNaN(ricVal) && ricVal < 1) {
+                                td.classList.add('plaque-cell');
+                                const lightness = 10 + 90 * ricVal;
+                                td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                            } else {
+                                // Use same background color as original table (#f1f5f9 - light gray)
+                                td.style.backgroundColor = '#f1f5f9';
+                                td.classList.remove('plaque-cell');
+                            }
                         } else {
-                            // Use same background color as original table (#f1f5f9 - light gray)
+                            // NO-PLAQUE mode: use neutral background
                             td.style.backgroundColor = '#f1f5f9';
                             td.classList.remove('plaque-cell');
                         }
@@ -1340,9 +1370,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     meta.displayFds = displayFds;
 
                     // Get transitive FDs from baseWrapper if available
-                    if (baseWrapper.dataset.transitiveFds) {
+                    if (baseWrapper.dataset.transitiveFDs) {
                         try {
-                            meta.transitiveFds = JSON.parse(baseWrapper.dataset.transitiveFds);
+                            meta.transitiveFds = JSON.parse(baseWrapper.dataset.transitiveFDs);
                         } catch (e) {
                             meta.transitiveFds = [];
                         }
@@ -1472,7 +1502,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try { wrapper.dataset.projectedFds = JSON.stringify([]); } catch (e) { wrapper.dataset.projectedFds = '[]'; }
             return;
         }
-        const payload = { columns: cols };
+        const payload = { columns: cols, computationId: window.computationId };
         try {
             const resp = await fetch('/normalize/project-fds', {
                 method: 'POST',
@@ -1736,6 +1766,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+            // Ensure computationId is always sent so backend can read the correct session namespace
+            bodyObj.computationId = window.computationId;
+
             const resp = await fetch('/normalize/decompose-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1753,9 +1786,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const ljValid = json.ljPreserved === true;
             const dpValid = json.dpPreserved === true;
-            const ljMessage = ljValid
-                ? '✓ The decomposition fulfills the lossless-join property.'
-                : 'Error: The decomposition does not fulfill the lossless-join property.';
+
+            // Build detailed lossless-join message
+            let ljMessage;
+            if (ljValid) {
+                ljMessage = '✓ The decomposition fulfills the lossless-join property.';
+            } else {
+                ljMessage = 'Error: The decomposition does not fulfill the lossless-join property.';
+                // Add detailed explanation if available
+                if (json.ljDetails && json.ljDetails.explanation) {
+                    ljMessage += '\n\n' + json.ljDetails.explanation;
+                }
+            }
 
             const dpMessage = dpValid
                 ? 'The decomposition is dependency-preserving.'
@@ -1865,10 +1907,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Check if lossless-join failed
             if (!result.ljValid) {
-                let finalMessage = "Decomposition Check Results:\n\n";
-                finalMessage += "• " + result.ljMessage.replace('Error:', 'ERROR:');
-                finalMessage += "\n\n------------------------------------\n";
-                finalMessage += "Please revise your decomposition based on the errors.";
+                let finalMessage = "<div style='text-align: left; font-size: 14px;'>";
+                finalMessage += "<p style='font-size: 16px; margin-bottom: 15px;'><strong>❌ The decomposition does not fulfill the lossless-join property.</strong></p>";
+
+                // Add detailed explanation if available
+                if (result.rawResponse && result.rawResponse.ljDetails) {
+                    const ljDetails = result.rawResponse.ljDetails;
+
+                    if (ljDetails.explanation) {
+                        finalMessage += "<div style='padding: 15px; background-color: #fff9e6; border-left: 4px solid #ff9800; border-radius: 4px; line-height: 1.6;'>";
+                        finalMessage += ljDetails.explanation.replace(/\n/g, '<br>');
+                        finalMessage += "</div>";
+                    }
+                }
+
+                finalMessage += "<hr style='margin: 20px 0; border: none; border-top: 1px solid #ddd;'>";
+                finalMessage += "<p style='font-style: italic; color: #666; margin-top: 15px;'>💡 Please revise your decomposition based on the guidance above.</p>";
+                finalMessage += "</div>";
 
                 triggerBtn.disabled = false;
                 document.body.style.cursor = 'default';
@@ -1876,7 +1931,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 await Swal.fire({
                     icon: 'error',
                     title: 'Check Failed: Not Lossless-Join',
-                    html: finalMessage.replace(/\n/g, '<br>'),
+                    html: finalMessage,
+                    width: '700px',
                     confirmButtonText: 'Close'
                 });
                 return;
@@ -2190,10 +2246,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const isLosslessValid = allChecksResult.ljValid;
 
             if (!isLosslessValid) {
-                let finalMessage = "Decomposition Check Results:\n\n";
-                finalMessage += "• " + allChecksResult.ljMessage.replace('Error:', 'ERROR:');
-                finalMessage += "\n\n------------------------------------\n";
-                finalMessage += "Please revise your decomposition based on the errors.";
+                let finalMessage = "<div style='text-align: left; font-size: 14px;'>";
+                finalMessage += "<p style='font-size: 16px; margin-bottom: 15px;'><strong>❌ The decomposition does not fulfill the lossless-join property.</strong></p>";
+
+                // Add detailed explanation if available
+                if (allChecksResult.rawResponse && allChecksResult.rawResponse.ljDetails) {
+                    const ljDetails = allChecksResult.rawResponse.ljDetails;
+
+                    if (ljDetails.explanation) {
+                        finalMessage += "<div style='padding: 15px; background-color: #fff9e6; border-left: 4px solid #ff9800; border-radius: 4px; line-height: 1.6;'>";
+                        finalMessage += ljDetails.explanation.replace(/\n/g, '<br>');
+                        finalMessage += "</div>";
+                    }
+                }
+
+                finalMessage += "<hr style='margin: 20px 0; border: none; border-top: 1px solid #ddd;'>";
+                finalMessage += "<p style='font-style: italic; color: #666; margin-top: 15px;'>💡 Please revise your decomposition based on the guidance above.</p>";
+                finalMessage += "</div>";
 
                 // Return the interface to normal
                 document.body.style.cursor = 'default';
@@ -2202,7 +2271,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 Swal.fire({
                     icon: 'error',
                     title: 'Check Failed: Not Lossless-Join',
-                    html: finalMessage.replace(/\n/g, '<br>'),
+                    html: finalMessage,
+                    width: '700px',
                     confirmButtonText: 'Close'
                 });
                 return;
@@ -2376,6 +2446,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (topLevelFdsArr.length === 0) topLevelFdsArr = uniqConcat(perTableFdsArrays);
 
         const bodyObj = { tables: tablesPayload, fds: topLevelFdsArr.join(';') };
+        bodyObj.computationId = window.computationId;
         if (Array.isArray(scopedBaseColumns) && scopedBaseColumns.length > 0) {
             bodyObj.baseColumns = scopedBaseColumns.map(Number);
         }
@@ -3270,12 +3341,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                     if (!isNaN(parsed)) ricVal = parsed;
                                 }
 
-                                if (!isNaN(ricVal) && ricVal < 1) {
-                                    td.classList.add('plaque-cell');
-                                    const lightness = 10 + 90 * ricVal;
-                                    td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                                // Only apply plaque coloring if enabled
+                                if (window.plaqueMode === 'enabled') {
+                                    if (!isNaN(ricVal) && ricVal < 1) {
+                                        td.classList.add('plaque-cell');
+                                        const lightness = 10 + 90 * ricVal;
+                                        td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
+                                    } else {
+                                        // Use same background color as original table (#f1f5f9 - light gray)
+                                        td.style.backgroundColor = '#f1f5f9';
+                                        td.classList.remove('plaque-cell');
+                                    }
                                 } else {
-                                    // Use same background color as original table (#f1f5f9 - light gray)
+                                    // NO-PLAQUE mode: use neutral background
                                     td.style.backgroundColor = '#f1f5f9';
                                     td.classList.remove('plaque-cell');
                                 }
@@ -3387,24 +3465,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // DP/LJ render + Continue button
     function renderDpLjStatus(resp, relationGroup = null) {
+        if (!resp) return;
+
         let box;
+        let targetContainer;
+
         if (relationGroup) {
+            // For nested relations, insert before local-decomposition-group
+            const localContainer = relationGroup.querySelector('.local-decomposition-group');
+            targetContainer = localContainer || relationGroup;
+
             box = relationGroup.querySelector('.dpLjStatusBox');
             if (!box) {
                 box = document.createElement('div');
                 box.className = 'dpLjStatusBox';
                 box.style.display = 'block';
                 box.style.margin = '12px 0';
-                relationGroup.appendChild(box);
+                // Insert before the decomposed tables container
+                if (localContainer) {
+                    relationGroup.insertBefore(box, localContainer);
+                } else {
+                    relationGroup.appendChild(box);
+                }
             }
         } else {
+            // For main decomposition, insert before decomposedTablesContainer
+            const decomposedContainer = document.getElementById('decomposedTablesContainer');
+            targetContainer = decomposedContainer;
+
             box = document.getElementById('dpLjStatusBox');
             if (!box) {
                 box = document.createElement('div');
                 box.id = 'dpLjStatusBox';
                 box.style.display = 'block';
                 box.style.margin = '12px 0';
-                document.getElementById('decomposedTablesContainer')?.after(box);
+                // Insert before the decomposed tables container
+                if (decomposedContainer && decomposedContainer.parentNode) {
+                    decomposedContainer.parentNode.insertBefore(box, decomposedContainer);
+                }
+            } else {
+                // Move box before container if it's not already there
+                if (decomposedContainer && decomposedContainer.parentNode && box.nextSibling !== decomposedContainer) {
+                    decomposedContainer.parentNode.insertBefore(box, decomposedContainer);
+                }
             }
         }
 
@@ -3417,6 +3520,7 @@ document.addEventListener('DOMContentLoaded', () => {
         msgs.innerHTML = '';
 
         const dp = Boolean(resp.dpPreserved);
+        const missingFDs = Array.isArray(resp.missingFDs) ? resp.missingFDs : [];
 
         // Create DP status message with different styling based on result
         const dpStatusDiv = document.createElement('div');
@@ -3428,12 +3532,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const dpText = document.createElement('span');
         dpText.className = 'dp-status__text';
-        dpText.textContent = dp
-            ? 'The decomposition is dependency-preserving.'
-            : 'The decomposition is not dependency-preserving.';
 
-        dpStatusDiv.appendChild(dpIcon);
-        dpStatusDiv.appendChild(dpText);
+        if (dp) {
+            dpText.textContent = 'The decomposition is dependency-preserving.';
+            dpStatusDiv.appendChild(dpIcon);
+            dpStatusDiv.appendChild(dpText);
+        } else {
+            dpText.textContent = 'The decomposition is not dependency-preserving.';
+            dpStatusDiv.appendChild(dpIcon);
+            dpStatusDiv.appendChild(dpText);
+
+            // Add missing FDs information if available
+            if (missingFDs.length > 0) {
+                const missingInfo = document.createElement('div');
+                missingInfo.className = 'dp-status__missing-fds';
+                missingInfo.style.marginTop = '8px';
+                missingInfo.style.fontSize = '0.9em';
+                missingInfo.style.color = '#d97706';
+
+                const missingTitle = document.createElement('strong');
+                missingTitle.textContent = 'Missing Functional Dependencies:';
+                missingInfo.appendChild(missingTitle);
+
+                const missingList = document.createElement('ul');
+                missingList.style.margin = '4px 0 0 20px';
+                missingList.style.listStyleType = 'disc';
+
+                missingFDs.forEach(fd => {
+                    const li = document.createElement('li');
+                    li.textContent = fd;
+                    li.style.marginBottom = '2px';
+                    missingList.appendChild(li);
+                });
+
+                missingInfo.appendChild(missingList);
+                dpStatusDiv.appendChild(missingInfo);
+            }
+        }
+
         msgs.appendChild(dpStatusDiv);
         box.style.display = 'block';
     }
@@ -3609,6 +3745,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const payload = state.payload;
+        payload.computationId = window.computationId;
 
         try {
             const res = await fetch('/normalize/continue', {

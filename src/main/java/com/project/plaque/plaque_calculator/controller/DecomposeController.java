@@ -73,9 +73,9 @@ public class DecomposeController {
 			HttpSession session
 	) {
 		DecomposeResponse resp = decomposeService.decompose(req, session);
-
 		return ResponseEntity.ok(resp);
 	}
+
 	// POST /normalize/project-fds
 	@PostMapping("/project-fds")
 	public ResponseEntity<?> projectFDs(
@@ -97,12 +97,12 @@ public class DecomposeController {
 	@PostMapping("/decompose-all")
 	public ResponseEntity<?> decomposeAll(@RequestBody DecomposeAllRequest req, HttpSession session) {
 		// Initialize attempt count if not exists (first decomposition = first attempt)
-		// attemptCount is incremented only when "Change Decomposition" is clicked
 		Integer attemptCount = (Integer) session.getAttribute(ATTEMPT_COUNT_SESSION_KEY);
 		if (attemptCount == null) {
-			attemptCount = 1; // First attempt
+			attemptCount = 1;
 			session.setAttribute(ATTEMPT_COUNT_SESSION_KEY, attemptCount);
 		}
+
 		// Adjust normalization starting time
 		if (attemptCount == 1) {
 			Long sessionStart = (Long) session.getAttribute("normalizationSessionStart");
@@ -151,8 +151,14 @@ public class DecomposeController {
 				return;
 			}
 
+			String computationId = req.getComputationId();
 			AtomicInteger index = new AtomicInteger(1);
 			tables.forEach(table -> {
+				// propagate computationId to per-table requests so DecomposeService can resolve session keys
+				if (computationId != null && (table.getComputationId() == null || table.getComputationId().isBlank())) {
+					table.setComputationId(computationId);
+				}
+
 				int current = index.getAndIncrement();
 				String label = "Decomposed Table " + current;
 				long startNs = System.nanoTime();

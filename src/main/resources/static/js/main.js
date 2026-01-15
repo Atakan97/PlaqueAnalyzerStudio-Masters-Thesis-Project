@@ -7,37 +7,51 @@ document.addEventListener('DOMContentLoaded', function() {
     // Adding and deleting functional dependencies
     const addFdButton = document.getElementById('addFdBtn');
     const fdTableBody = document.getElementById('fdTable')?.querySelector('tbody');
+    const clearManualDataBtn = document.getElementById('clearManualDataBtn');
+    const clearFdRowsBtn = document.getElementById('clearFdRowsBtn');
+
+
+     // Builds a FD table row so numbering, arrow cell and delete button
+    const buildFdRowHtml = (rowNumber, left = '', right = '') => `
+                <td>${rowNumber}</td>
+                <td contenteditable>${left}</td>
+                <td>→</td>
+                <td contenteditable>${right}</td>
+                <td><button type="button" class="delFd">×</button></td>
+            `;
+
+    // Appends a fresh FD row to the table body and auto-increments row numbers.
+    const appendFdRow = (left = '', right = '') => {
+        if (!fdTableBody) return;
+        const tr = document.createElement('tr');
+        tr.innerHTML = buildFdRowHtml(fdTableBody.rows.length + 1, left, right);
+        fdTableBody.appendChild(tr);
+    };
+
+    // Clears the FD table and leaves a single empty row.
+    const resetFdTable = () => {
+        if (!fdTableBody) return;
+        fdTableBody.innerHTML = '';
+        appendFdRow();
+    };
+
     if (addFdButton && fdTableBody) {
         addFdButton.addEventListener('click', () => {
-            const rowCount = fdTableBody.rows.length + 1;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${rowCount}</td>
-                <td contenteditable></td>
-                <td>→</td>
-                <td contenteditable></td>
-                <td><button class="delFd">×</button></td>
-            `;
-            fdTableBody.appendChild(tr);
+            appendFdRow();
         });
         fdTableBody.addEventListener('click', e => {
             if (e.target.matches('.delFd')) {
                 e.target.closest('tr').remove();
                 Array.from(fdTableBody.rows).forEach((r, i) => r.cells[0].textContent = i + 1);
+                if (fdTableBody.rows.length === 0) {
+                    appendFdRow();
+                }
             }
         });
 
         // If the table is empty (no restored data), insert a blank row
         if (fdTableBody.rows.length === 0) {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-            <td>1</td>
-            <td contenteditable></td>
-            <td>→</td>
-            <td contenteditable></td>
-            <td><button class="delFd">×</button></td>
-        `;
-            fdTableBody.appendChild(tr);
+            appendFdRow();
         }
     }
 
@@ -93,7 +107,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Add row delete button
         const deleteCell = newRow.insertCell();
-        deleteCell.innerHTML = `<button class="delManualRow">×</button>`;
+        deleteCell.innerHTML = `<button type="button" class="delManualRow">×</button>`;
+    }
+
+    /**
+     * Removes all manual data rows, resets the hidden payload and inserts one
+     * blank row so the table remains editable after the clear action.
+     */
+    function clearManualDataTable() {
+        if (!manualDataTable) return;
+        const tbody = manualDataTable.querySelector('tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        addManualRow();
+        const manualDataInput = document.getElementById('manualData');
+        if (manualDataInput) manualDataInput.value = '';
+        syncManualDataFromTable();
+    }
+
+    /**
+     * Clears the FD grid as well as the hidden input so the form submission
+     * reflects the visible empty state.
+     */
+    function clearFunctionalDependencies() {
+        resetFdTable();
+        const fdInput = document.getElementById('fdsInput');
+        if (fdInput) fdInput.value = '';
     }
 
     // Function to detect and remove duplicate tuples from manual data table
@@ -131,6 +170,14 @@ document.addEventListener('DOMContentLoaded', function() {
         return rowsToRemove.length;
     }
 
+    if (clearManualDataBtn) {
+        clearManualDataBtn.addEventListener('click', clearManualDataTable);
+    }
+
+    if (clearFdRowsBtn) {
+        clearFdRowsBtn.addEventListener('click', clearFunctionalDependencies);
+    }
+
     // Update the table when the "Update Table" button is clicked
     if (updateColumnsBtn && columnCountInput) {
         updateColumnsBtn.addEventListener('click', () => {
@@ -147,8 +194,31 @@ document.addEventListener('DOMContentLoaded', function() {
     // Manage row deletion event (with event deletion)
     if (manualDataTable) {
         manualDataTable.addEventListener('click', e => {
-            if (e.target.matches('.delManualRow')) {
-                e.target.closest('tr').remove();
+            if (!e.target.matches('.delManualRow')) {
+                return;
+            }
+
+            const row = e.target.closest('tr');
+            if (!row) return;
+
+            const tbody = manualDataTable.querySelector('tbody');
+            if (!tbody) return;
+
+            const rows = Array.from(tbody.rows);
+            const isOnlyRow = rows.length === 1 && rows[0] === row;
+            const rowIsEmpty = Array.from(row.querySelectorAll('td[contenteditable]'))
+                .every(cell => cell.textContent.trim() === '');
+
+            // Keep a single placeholder row if it is empty
+            if (isOnlyRow && rowIsEmpty) {
+                return;
+            }
+
+            row.remove();
+
+            // Ensure table never stays empty
+            if (tbody.rows.length === 0) {
+                addManualRow();
             }
         });
 
@@ -253,13 +323,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const right = parts[1].trim();
 
             const newRow = fdTableBody.insertRow();
-            newRow.innerHTML = `
-                <td>${index + 1}</td>
-                <td contenteditable>${left}</td>
-                <td>→</td>
-                <td contenteditable>${right}</td>
-                <td><button type="button" class="delFd">×</button></td>
-            `;
+            newRow.innerHTML = buildFdRowHtml(index + 1, left, right);
         });
 
         // Rearrange line numbers
@@ -403,7 +467,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function startLiveComputation({ manualData, fds, monteCarloSelected, samples, duplicatesRemoved }) {
         if (computeBtn) computeBtn.disabled = true;
 
+        // NO-PLAQUE mode: Skip live computation modal, submit form directly
+        if (window.plaqueMode === 'disabled') {
+            console.log('[main.js] NO-PLAQUE mode: Skipping live computation modal, submitting form directly');
+            document.getElementById('calcForm').submit();
+            return;
+        }
 
+        // WITH-PLAQUE mode: Show live computation status modal
         let swalInstance;
         const progressItems = [];
         let lastProgressAt = performance.now();

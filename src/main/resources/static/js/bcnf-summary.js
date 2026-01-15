@@ -77,21 +77,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const td = row.insertCell();
                 td.textContent = value;
 
-                let ricVal = NaN;
-                if (Array.isArray(originalRicMatrix) && Array.isArray(originalRicMatrix[rowIdx])) {
-                    ricVal = parseFloat(originalRicMatrix[rowIdx]?.[colIdx]);
-                }
-
-                if (!Number.isNaN(ricVal) && ricVal < 1) {
-                    td.classList.add('plaque-cell');
-                    td.style.backgroundColor = getPlaqueColorFn(ricVal);
-                    if (ricVal < 0.5) {
-                        td.classList.add('plaque-light-text');
+                // Only apply plaque coloring if enabled
+                if (window.plaqueMode === 'enabled') {
+                    let ricVal = NaN;
+                    if (Array.isArray(originalRicMatrix) && Array.isArray(originalRicMatrix[rowIdx])) {
+                        ricVal = parseFloat(originalRicMatrix[rowIdx]?.[colIdx]);
                     }
-                } else {
-                    td.classList.remove('plaque-cell');
-                    td.classList.remove('plaque-light-text');
-                    td.style.backgroundColor = '';
+
+                    if (!Number.isNaN(ricVal) && ricVal < 1) {
+                        td.classList.add('plaque-cell');
+                        td.style.backgroundColor = getPlaqueColorFn(ricVal);
+                        if (ricVal < 0.5) {
+                            td.classList.add('plaque-light-text');
+                        }
+                    } else {
+                        td.classList.remove('plaque-cell');
+                        td.classList.remove('plaque-light-text');
+                        td.style.backgroundColor = '';
+                    }
                 }
             });
         });
@@ -155,31 +158,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 const td = tr.insertCell();
                 td.textContent = cellValues[colIdx] ?? '';
 
-                let ricVal = NaN;
-                if (Array.isArray(localRicMatrix) && Array.isArray(localRicMatrix[rowIdx]) && localRicMatrix[rowIdx][colIdx] != null) {
-                    ricVal = parseFloat(localRicMatrix[rowIdx][colIdx]);
-                } else if (Array.isArray(globalRic) && Array.isArray(globalRic[rowIdx])) {
-                    const unionIdx = columnIndices[colIdx];
-                    if (Array.isArray(unionCols)) {
-                        const globalColIndex = unionCols.indexOf(unionIdx);
-                        if (globalColIndex >= 0) {
-                            ricVal = parseFloat(globalRic[rowIdx]?.[globalColIndex]);
+                // Only apply plaque coloring if enabled
+                if (window.plaqueMode === 'enabled') {
+                    let ricVal = NaN;
+                    if (Array.isArray(localRicMatrix) && Array.isArray(localRicMatrix[rowIdx]) && localRicMatrix[rowIdx][colIdx] != null) {
+                        ricVal = parseFloat(localRicMatrix[rowIdx][colIdx]);
+                    } else if (Array.isArray(globalRic) && Array.isArray(globalRic[rowIdx])) {
+                        const unionIdx = columnIndices[colIdx];
+                        if (Array.isArray(unionCols)) {
+                            const globalColIndex = unionCols.indexOf(unionIdx);
+                            if (globalColIndex >= 0) {
+                                ricVal = parseFloat(globalRic[rowIdx]?.[globalColIndex]);
+                            }
                         }
                     }
-                }
 
-                if (!Number.isNaN(ricVal) && ricVal < 1) {
-                    td.classList.add('plaque-cell');
-                    td.style.backgroundColor = getPlaqueColorFn(ricVal);
-                    if (ricVal < 0.5) {
-                        td.classList.add('plaque-light-text');
+                    if (!Number.isNaN(ricVal) && ricVal < 1) {
+                        td.classList.add('plaque-cell');
+                        td.style.backgroundColor = getPlaqueColorFn(ricVal);
+                        if (ricVal < 0.5) {
+                            td.classList.add('plaque-light-text');
+                        } else {
+                            td.classList.remove('plaque-light-text');
+                        }
                     } else {
+                        td.classList.remove('plaque-cell');
                         td.classList.remove('plaque-light-text');
+                        td.style.backgroundColor = '';
                     }
-                } else {
-                    td.classList.remove('plaque-cell');
-                    td.classList.remove('plaque-light-text');
-                    td.style.backgroundColor = '';
                 }
             });
         });
