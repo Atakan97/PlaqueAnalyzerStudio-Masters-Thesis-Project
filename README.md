@@ -8,7 +8,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 ## Requirements
 
-- **Java 18+** 
+- **Java 17+** 
 - **Maven 3.6+ (preferably 3.8+)**  
 - **(Optional) An IDE such as IntelliJ IDEA, Eclipse, or VS Code with Java support**
 - **Other maven dependencies will be installed automatically as long as an internet connection is available.**
