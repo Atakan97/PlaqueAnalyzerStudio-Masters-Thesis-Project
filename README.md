@@ -8,7 +8,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 <img width="1251" height="1661" alt="projectss1" src="https://github.com/user-attachments/assets/3a323001-f2d7-4e05-80a6-8724eca2673e" />
 
-<img width="1092" height="892" alt="projectss2" src="https://github.com/user-attachments/assets/667b000f-fa85-4a15-9220-a0c7f06130d2" />
+<img width="1529" height="1630" alt="projectss2" src="https://github.com/user-attachments/assets/39a6db61-a8fb-462e-8bd4-eecff4d944c0" />
 
 ## Requirements
 
@@ -137,5 +137,6 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 
    In order to run the app, please go to the http://localhost:8080.
+
 
 
