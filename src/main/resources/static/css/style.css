@@ -1,3 +1,10 @@
+/* CSS custom property defaults for pairing highlights */
+:root {
+    --pair-accent: #6366f1;
+    --pair-accent-glow: rgba(99, 102, 241, 0.35);
+    --orig-pair-shadow: rgba(99, 102, 241, 0.25);
+}
+
 /* Basic font and coloring scheme for the entire page */
 body {
     font-family: 'Inter', sans-serif;
@@ -1263,6 +1270,17 @@ input[type="file"]::file-selector-button:hover {
     opacity: 0.9;
 }
 
+.table-vertical-scroll-wrapper .data-grid thead th {
+    padding-right: 28px;
+}
+
+.table-vertical-scroll-wrapper .delete-col-btn {
+    top: 6px;
+    right: 6px;
+    left: auto;
+    transform: none;
+}
+
 .delete-col-btn:hover {
     background-color: #dc2626;
     opacity: 1;
@@ -1632,7 +1650,14 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .decomposed-wrapper.orig-as-original h3 {
-    display: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0 0 12px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #0f172a;
 }
 .decomposed-wrapper.orig-as-original .add-table-local,
 .decomposed-wrapper.orig-as-original .remove-table-btn {
@@ -1899,9 +1924,11 @@ input[type="file"]::file-selector-button:hover {
     box-sizing: border-box;
     background: #fff;
     border: 1px solid #cbd5e1;
+    border-radius: 12px;
     padding: 16px;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 #decomposedRelationsContainer .decomposed-content,
@@ -1946,11 +1973,15 @@ input[type="file"]::file-selector-button:hover {
     min-width: 320px;
     max-width: 100%;
     margin: 0;
+    border-radius: 12px;
+    overflow: hidden;
 }
 
 .restore-layout .decomposed-wrapper.orig-as-original {
     flex: 1 1 100%;
     max-width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
 }
 
 .restore-layout .orig-as-original .fd-list-container {
@@ -1964,33 +1995,6 @@ input[type="file"]::file-selector-button:hover {
     gap: 20px;
     margin-top: 12px;
 }
-
-/* BCNF Status Badge */
-.bcnf-status-badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 0.75em;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    margin-left: 12px;
-    vertical-align: middle;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.bcnf-status-badge.bcnf-yes {
-    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-    color: #065f46;
-    border: 1px solid #34d399;
-}
-
-.bcnf-status-badge.bcnf-no {
-    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-    color: #991b1b;
-    border: 1px solid #f87171;
-}
-
 .bcnf-info-message {
     display: flex;
     align-items: center;
@@ -2118,6 +2122,78 @@ input[type="file"]::file-selector-button:hover {
     box-sizing: border-box;
 }
 
+.relation-pair-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85em;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 4px 14px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    background: #6366f1;
+    color: #f8fafc;
+}
+
+.relation-pair-badge--table {
+    margin-left: 10px;
+}
+
+/* Table header badge - full width of table wrapper */
+.relation-table-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 10px 16px;
+    margin: -16px -16px 12px -16px;
+    font-size: 0.9em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border-radius: 10px 10px 0 0;
+    transition: all 0.2s ease;
+}
+
+.relation-table-header:hover {
+    transform: translateY(-1px);
+}
+
+.relation-pairable.relation-pairable--minimal {
+    border: none;
+}
+
+.relation-pairable {
+    border-radius: 16px;
+    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.relation-pairable:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.relation-pairable.relation-pair-highlight {
+    border-color: var(--pair-accent, #6366f1);
+    box-shadow: 0 12px 26px var(--pair-accent-glow, rgba(99, 102, 241, 0.35));
+    transform: translateY(-2px);
+}
+
+.original-fd-highlight {
+    box-shadow: 0 14px 34px var(--orig-pair-shadow, rgba(99, 102, 241, 0.25));
+    border-radius: 18px;
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+#originalTableContainer.original-table-highlight {
+    box-shadow: 0 18px 40px var(--orig-pair-shadow, rgba(99, 102, 241, 0.2));
+    border-radius: 14px;
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
 @media (max-width: 1500px) {
     #decomposedRelationsContainer.restore-layout .relation-group,
     #relationsFdListsContainer .fd-wrapper-group {
@@ -2132,4 +2208,28 @@ input[type="file"]::file-selector-button:hover {
         flex: 1 1 100%;
         max-width: 100%;
     }
+}
+
+/* Vertical scroll wrapper for large tables (10+ rows)
+   Used on normalization/bcnf-summary pages to keep tall datasets compact.
+*/
+.table-vertical-scroll-wrapper {
+    width: 100%;
+    max-height: 420px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 10px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    background: rgba(255, 255, 255, 0.75);
+}
+
+/* Keep header visible while scrolling inside the wrapper */
+.table-vertical-scroll-wrapper .data-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.table-vertical-scroll-wrapper .data-grid {
+    margin-top: 0;
 }

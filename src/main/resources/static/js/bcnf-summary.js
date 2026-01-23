@@ -3,6 +3,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('bcnfLogForm');
     const userNameInput = document.getElementById('bcnfUserName');
 
+    /**
+     * Function to apply vertical scrolling wrapper for tables with many rows.
+     * Will be activated when table has more than 10 rows.
+     */
+    function applyVerticalScrollingToTable(table, rowCount, threshold = 10) {
+        if (!table || !table.parentElement) return;
+
+        const parent = table.parentElement;
+        const existingWrapper = parent.classList.contains('table-vertical-scroll-wrapper')
+            ? parent
+            : null;
+
+        // If row count exceeds threshold and no wrapper exists, add one
+        if (rowCount > threshold && !existingWrapper) {
+            const scrollWrapper = document.createElement('div');
+            scrollWrapper.classList.add('table-vertical-scroll-wrapper');
+
+            // Insert wrapper before table and move table inside it
+            const tableParent = table.parentElement;
+            tableParent.insertBefore(scrollWrapper, table);
+            scrollWrapper.appendChild(table);
+        }
+        // If row count is below threshold and wrapper exists, remove it
+        else if (rowCount <= threshold && existingWrapper) {
+            const wrapperParent = existingWrapper.parentElement;
+            if (wrapperParent) {
+                // Move table back to wrapper's parent and remove wrapper
+                wrapperParent.insertBefore(table, existingWrapper);
+                existingWrapper.remove();
+            }
+        }
+    }
+
     const summaryData = window.bcnfSummaryData;
     if (!summaryData || !container) {
         return;
@@ -101,6 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         originalSection.appendChild(originalTable);
         originalContainer.appendChild(originalSection);
+
+        // Apply vertical scrolling if table has more than 10 rows
+        applyVerticalScrollingToTable(originalTable, originalRows.length);
     }
 
     columnsPerTable.forEach((cols, tableIdx) => {
@@ -192,6 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         wrapper.appendChild(fdSection);
         wrapper.appendChild(table);
+
+        // Apply vertical scrolling if table has more than 10 rows
+        applyVerticalScrollingToTable(table, manualRows.length);
 
         tablesFragment.appendChild(wrapper);
     });

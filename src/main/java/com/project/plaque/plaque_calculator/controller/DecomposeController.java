@@ -96,48 +96,11 @@ public class DecomposeController {
 	// POST /normalize/decompose-all (processing multiple decomposed-tables)
 	@PostMapping("/decompose-all")
 	public ResponseEntity<?> decomposeAll(@RequestBody DecomposeAllRequest req, HttpSession session) {
-		// Initialize attempt count if not exists (first decomposition = first attempt)
-		Integer attemptCount = (Integer) session.getAttribute(ATTEMPT_COUNT_SESSION_KEY);
-		if (attemptCount == null) {
-			attemptCount = 1;
-			session.setAttribute(ATTEMPT_COUNT_SESSION_KEY, attemptCount);
-		}
-
-		// Adjust normalization starting time
-		if (attemptCount == 1) {
-			Long sessionStart = (Long) session.getAttribute("normalizationSessionStart");
-			if (sessionStart == null) {
-				sessionStart = System.currentTimeMillis();
-				session.setAttribute("normalizationSessionStart", sessionStart);
-			}
-			if (session.getAttribute(NORMALIZATION_START_TIME_KEY) == null) {
-				session.setAttribute(NORMALIZATION_START_TIME_KEY, sessionStart);
-			}
-		}
+		recordNormalizationAttemptsAndStartTime(session);
 
 		DecomposeAllResponse response = decomposeService.decomposeAll(req, session);
 
-		// If BCNF, collect duration information and reset session values
-		if (response.isBCNFDecomposition()) {
-			Long startTime = (Long) session.getAttribute(NORMALIZATION_START_TIME_KEY);
-			if (startTime == null) {
-				startTime = (Long) session.getAttribute("normalizationSessionStart");
-			}
-			long currentTime = System.currentTimeMillis();
-			long elapsedTime = startTime != null ?
-					(currentTime - startTime) / 1000 : 0;
-
-			session.setAttribute("bcnfAttempts", attemptCount);
-			session.setAttribute("bcnfElapsedTime", elapsedTime);
-			int tableCount = response.getTableResults() != null ? response.getTableResults().size() : 0;
-			session.setAttribute("bcnfTableCount", tableCount);
-			session.setAttribute("bcnfDependencyPreserved", response.isDpPreserved());
-
-			// Clean session
-			session.removeAttribute(ATTEMPT_COUNT_SESSION_KEY);
-			session.removeAttribute(NORMALIZATION_START_TIME_KEY);
-			session.removeAttribute("normalizationSessionStart");
-		}
+		storeBcnfDataIfComplete(session, response);
 
 		return ResponseEntity.ok(response);
 	}
@@ -152,6 +115,7 @@ public class DecomposeController {
 			}
 
 			String computationId = req.getComputationId();
+			recordNormalizationAttemptsAndStartTime(session);
 			AtomicInteger index = new AtomicInteger(1);
 			tables.forEach(table -> {
 				// propagate computationId to per-table requests so DecomposeService can resolve session keys
@@ -175,6 +139,7 @@ public class DecomposeController {
 			});
 
 			DecomposeAllResponse aggregate = decomposeService.decomposeAll(req, session);
+			storeBcnfDataIfComplete(session, aggregate);
 			emitComplete(emitter, aggregate);
 		} catch (Exception ex) {
 			emitError(emitter, ex.getMessage() == null ? "Normalization failed." : ex.getMessage());
@@ -231,5 +196,56 @@ public class DecomposeController {
 			return elapsedMs + " ms";
 		}
 		return String.format(Locale.US, "%.2f s", elapsedMs / 1000.0);
+	}
+
+	private int recordNormalizationAttemptsAndStartTime(HttpSession session) {
+		Integer attemptCount = (Integer) session.getAttribute(ATTEMPT_COUNT_SESSION_KEY);
+		if (attemptCount == null) {
+			attemptCount = 1;
+			session.setAttribute(ATTEMPT_COUNT_SESSION_KEY, attemptCount);
+		}
+
+		if (attemptCount == 1) {
+			Long sessionStart = (Long) session.getAttribute("normalizationSessionStart");
+			if (sessionStart == null) {
+				sessionStart = System.currentTimeMillis();
+				session.setAttribute("normalizationSessionStart", sessionStart);
+			}
+			if (session.getAttribute(NORMALIZATION_START_TIME_KEY) == null) {
+				session.setAttribute(NORMALIZATION_START_TIME_KEY, sessionStart);
+			}
+		}
+		return attemptCount;
+	}
+
+	private void storeBcnfDataIfComplete(HttpSession session, DecomposeAllResponse response) {
+		if (response == null || !response.isBCNFDecomposition()) {
+			return;
+		}
+
+		Long startTime = (Long) session.getAttribute(NORMALIZATION_START_TIME_KEY);
+		if (startTime == null) {
+			startTime = (Long) session.getAttribute("normalizationSessionStart");
+		}
+		long elapsedSeconds = 0;
+		if (startTime != null) {
+			long currentTime = System.currentTimeMillis();
+			elapsedSeconds = Math.max(0, (currentTime - startTime) / 1000);
+		}
+
+		Integer attemptCount = (Integer) session.getAttribute(ATTEMPT_COUNT_SESSION_KEY);
+		if (attemptCount == null) {
+			attemptCount = 1;
+		}
+
+		session.setAttribute("bcnfAttempts", attemptCount);
+		session.setAttribute("bcnfElapsedTime", elapsedSeconds);
+		int tableCount = response.getTableResults() != null ? response.getTableResults().size() : 0;
+		session.setAttribute("bcnfTableCount", tableCount);
+		session.setAttribute("bcnfDependencyPreserved", response.isDpPreserved());
+
+		session.removeAttribute(ATTEMPT_COUNT_SESSION_KEY);
+		session.removeAttribute(NORMALIZATION_START_TIME_KEY);
+		session.removeAttribute("normalizationSessionStart");
 	}
 }

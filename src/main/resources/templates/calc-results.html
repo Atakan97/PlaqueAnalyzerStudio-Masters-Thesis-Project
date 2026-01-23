@@ -39,102 +39,109 @@
   <div class="tables-side-by-side">
     <div th:if="${parsedInputData != null and !parsedInputData.isEmpty()}" class="table-wrapper">
       <h3 class="result-section-title">Input Data:</h3>
-      <table class="data-grid">
-        <thead>
-        <tr>
-          <th th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
-              th:text="${i}"></th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr th:each="row : ${parsedInputData}">
-          <td th:each="cell : ${row}"
-              th:text="${cell}">val</td>
-        </tr>
-        </tbody>
-      </table>
+      <div class="table-scroll-wrapper">
+        <table class="data-grid">
+          <thead>
+          <tr>
+            <th th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
+                th:text="${i}"></th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="row : ${parsedInputData}">
+            <td th:each="cell : ${row}"
+                th:text="${cell}">val</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- WITH-PLAQUE mode: Show RIC visualization -->
     <div th:if="${ricMatrix != null and plaqueMode == 'enabled'}" class="table-wrapper" style="margin-bottom: 30px;">
       <h3 class="result-section-title">Calculation Results:</h3>
+      <div class="table-scroll-wrapper stacked">
+        <table id="initialCalcTable" class="data-grid">
+          <thead>
+          <tr>
+            <th th:if="${parsedInputData != null and !parsedInputData.isEmpty()}"
+                th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
+                th:text="${i}"></th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="row, rsStat : ${parsedInputData}">
+            <td th:each="cell, csStat : ${row}"
+                th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
+                th:text="${cell}">val</td>
+          </tr>
+          </tbody>
+        </table>
 
-      <table id="initialCalcTable" class="data-grid">
-        <thead>
-        <tr>
-          <th th:if="${parsedInputData != null and !parsedInputData.isEmpty()}"
-              th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
-              th:text="${i}"></th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr th:each="row, rsStat : ${parsedInputData}">
-          <td th:each="cell, csStat : ${row}"
-              th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
-              th:text="${cell}">val</td>
-        </tr>
-        </tbody>
-      </table>
+        <table id="ricTable" class="data-grid" style="display:none">
+          <thead>
+          <tr>
+            <th th:each="i : ${#numbers.sequence(1, ricColCount)}"
+                th:text="${i}"></th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="row : ${ricMatrix}">
+            <td th:each="cell : ${row}"
+                th:classappend="${cell != '1' and cell != '1.0'} ? 'plaque-cell' : ''"
+                th:text="${cell}"></td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
 
-      <table id="ricTable" class="data-grid" style="display:none">
-        <thead>
-        <tr>
-          <th th:each="i : ${#numbers.sequence(1, ricColCount)}"
-              th:text="${i}"></th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr th:each="row : ${ricMatrix}">
-          <td th:each="cell : ${row}"
-              th:classappend="${cell != '1' and cell != '1.0'} ? 'plaque-cell' : ''"
-              th:text="${cell}"></td>
-        </tr>
-        </tbody>
-      </table>
-
-      <button id="showCalcBtn" type="button" class="small">
-        Show Information Contents
-      </button>
-      <button id="returnBtn" type="button" class="small" style="display:none">
-        Return to Input
-      </button>
+      <div class="table-toggle-actions">
+        <button id="showCalcBtn" type="button" class="small">
+          Show Information Contents
+        </button>
+        <button id="returnBtn" type="button" class="small" style="display:none">
+          Return to Input
+        </button>
+      </div>
     </div>
 
     <!-- NO-PLAQUE mode: Show plain data table without RIC visualization -->
     <div th:if="${parsedInputData != null and plaqueMode == 'disabled'}" class="table-wrapper" style="margin-bottom: 30px;">
       <h3 class="result-section-title">Data Table (Without Plaque):</h3>
-      <table class="data-grid">
-        <thead>
-        <tr>
-          <th th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
-              th:text="${i}"></th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr th:each="row : ${parsedInputData}">
-          <td th:each="cell : ${row}" th:text="${cell}">val</td>
-        </tr>
-        </tbody>
-      </table>
+      <div class="table-scroll-wrapper">
+        <table class="data-grid">
+          <thead>
+          <tr>
+            <th th:each="i : ${#numbers.sequence(1, parsedInputData[0].size())}"
+                th:text="${i}"></th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="row : ${parsedInputData}">
+            <td th:each="cell : ${row}" th:text="${cell}">val</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
 
 <form th:action="@{/normalization}" method="get" class="start-normalize-form">
-    <input type="hidden" name="id" th:value="${computationId}" />
-    <button type="submit" class="button pill">Start Normalization</button>
-  </form>
+  <input type="hidden" name="id" th:value="${computationId}" />
+  <button type="submit" class="button pill">Start Normalization</button>
+</form>
 
-  <script th:inline="javascript">
-    /*<![CDATA[*/
-    window.ricMatrix = /*[[${ricMatrix}]]*/ [];
-    window.plaqueMode = /*[[${plaqueMode}]]*/ 'enabled';
-    // Moving transitive closure FDs to JavaScript
-    window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
-    // Number of duplicate tuples removed
-    window.duplicatesRemoved = /*[[${duplicatesRemoved}]]*/ 0;
-    /*]]>*/
-  </script>
-  <script th:src="@{/js/results.js}"></script>
+<script th:inline="javascript">
+  /*<![CDATA[*/
+  window.ricMatrix = /*[[${ricMatrix}]]*/ [];
+  window.plaqueMode = /*[[${plaqueMode}]]*/ 'enabled';
+  // Moving transitive closure FDs to JavaScript
+  window.transitiveFdsArray = /*[[${transitiveFdStrings}]]*/ [];
+  // Number of duplicate tuples removed
+  window.duplicatesRemoved = /*[[${duplicatesRemoved}]]*/ 0;
+  /*]]>*/
+</script>
+<script th:src="@{/js/results.js}"></script>
 </body>
 </html>

@@ -10,14 +10,326 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Makes a table vertically scrollable when the number of data rows exceed 10 rows.
+     * Due to obtain easy drag-and-drop of columns.
+     * This keeps the table compact while still letting users scroll within the table.
+     */
+    function applyVerticalScrollingToTable(tableEl, rowCount, threshold = 10) {
+        if (!tableEl || !(tableEl instanceof HTMLTableElement) || !tableEl.parentElement) return;
+
+        const parent = tableEl.parentElement;
+        const existingWrapper = parent.classList.contains('table-vertical-scroll-wrapper') ? parent : null;
+
+        // Enable scroll
+        if (rowCount > threshold && !existingWrapper) {
+            const scrollWrapper = document.createElement('div');
+            scrollWrapper.classList.add('table-vertical-scroll-wrapper');
+
+            // Insert wrapper before the table and move the table inside it
+            parent.insertBefore(scrollWrapper, tableEl);
+            scrollWrapper.appendChild(tableEl);
+            return;
+        }
+
+        // Disable scroll
+        if (rowCount <= threshold && existingWrapper) {
+            const wrapperParent = existingWrapper.parentElement;
+            if (!wrapperParent) return;
+
+            wrapperParent.insertBefore(tableEl, existingWrapper);
+            existingWrapper.remove();
+        }
+    }
+
+    /**
+     * Function that measures a table's current body row count and applies or removes the scroll wrapper.
+     */
+    function refreshTableVerticalScroll(tableEl, threshold = 10) {
+        if (!tableEl) return;
+        const rowCount = tableEl.tBodies && tableEl.tBodies[0] ? tableEl.tBodies[0].rows.length : 0;
+        applyVerticalScrollingToTable(tableEl, rowCount, threshold);
+    }
+
     // UI elements and state
     const elapsedEl   = document.getElementById('elapsed');
     const attemptEl   = document.getElementById('attemptCount');
     const addTableBtn = document.getElementById('addTable');
     const relationsContainer = document.getElementById('decomposedRelationsContainer');
     const decContainer= document.getElementById('decomposedTablesContainer');
+    const originalFdPanel = document.getElementById('fdListContainer');
     const relationMetaMap = new Map();
+    // Tracks BCNF status per relation group to guard UI actions
+    const relationBcnfStatus = new Map();
+    const RELATION_PAIR_COLORS = ['#6366F1', '#0EA5E9', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#22C55E', '#F97316'];
 
+    // Gives each relation group a stable id in order to store its status
+    function getRelationId(group) {
+        if (!group) return null;
+        if (!group.dataset.relationId) {
+            group.dataset.relationId = `relation-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        }
+        return group.dataset.relationId;
+    }
+
+    // Makes sure the relation group exists inside the BCNF status map
+    function ensureRelationStatusEntry(group) {
+        const id = getRelationId(group);
+        if (!id) return;
+        if (!relationBcnfStatus.has(id)) {
+            relationBcnfStatus.set(id, false);
+        }
+    }
+
+    // Updates BCNF flag for one relation group
+    function setRelationBcnfStatus(group, isBcnf) {
+        const id = getRelationId(group);
+        if (!id) return;
+        relationBcnfStatus.set(id, Boolean(isBcnf));
+    }
+
+    // Returns true only if every relation group is BCNF
+    function areAllRelationGroupsBcnf() {
+        if (relationBcnfStatus.size === 0) {
+            return false;
+        }
+        for (const value of relationBcnfStatus.values()) {
+            if (!value) return false;
+        }
+        return true;
+    }
+
+    // Resets BCNF status and hides BCNF UI for a specific group
+    function markRelationNeedsWork(group) {
+        if (!group) return;
+        setRelationBcnfStatus(group, false);
+        if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'none';
+        window._lastBcnfMeta = null;
+    }
+
+    // Toggles global buttons depending on full BCNF completion
+    function applyGlobalBcnfOutcome({ relationGroup = null, localBcnf = false, finalAttempts = 0, finalElapsed = 0 }) {
+        if (relationGroup) {
+            setRelationBcnfStatus(relationGroup, localBcnf);
+        }
+
+        const hasRelationGroups = document.querySelectorAll('.relation-group').length > 0;
+        const globalComplete = hasRelationGroups ? areAllRelationGroupsBcnf() : localBcnf;
+
+        if (globalComplete) {
+            if (computeAllBtn) computeAllBtn.style.display = 'none';
+            if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
+            if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
+            if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
+            if (addTableBtn) addTableBtn.style.display = 'none';
+
+            window._lastBcnfMeta = {
+                attempts: finalAttempts,
+                elapsed: finalElapsed
+            };
+            if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'inline-block';
+        } else {
+            if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'none';
+            window._lastBcnfMeta = null;
+            if (computeAllBtn) computeAllBtn.style.display = 'none';
+            if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'inline-block';
+        }
+
+        return globalComplete;
+    }
+
+    // Returns a color for a relation index
+    function getRelationAccent(index) {
+        if (typeof index !== 'number' || index < 0) {
+            return RELATION_PAIR_COLORS[0];
+        }
+        return RELATION_PAIR_COLORS[index % RELATION_PAIR_COLORS.length];
+    }
+
+    // Converts a hex color string to rgba
+    function hexToRgba(hex, alpha = 1) {
+        const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (!match) return `rgba(99, 102, 241, ${alpha})`;
+        const r = parseInt(match[1], 16);
+        const g = parseInt(match[2], 16);
+        const b = parseInt(match[3], 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    // Chooses a contrasting text color for the provided hex background
+    function getContrastColor(hex) {
+        const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (!match) return '#f8fafc';
+        const r = parseInt(match[1], 16);
+        const g = parseInt(match[2], 16);
+        const b = parseInt(match[3], 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        return brightness > 160 ? '#0f172a' : '#f8fafc';
+    }
+
+    // Builds the pill badge used to label paired relations/tables
+    function createRelationBadge(label, accentColor, extraClass = '') {
+        const badge = document.createElement('span');
+        badge.className = `relation-pair-badge ${extraClass}`.trim();
+        badge.textContent = label;
+        badge.dataset.pairLabel = label;
+        badge.style.backgroundColor = accentColor;
+        badge.style.color = getContrastColor(accentColor);
+        badge.style.boxShadow = `0 8px 16px ${hexToRgba(accentColor, 0.35)}`;
+        badge.style.border = `1px solid ${hexToRgba(accentColor, 0.45)}`;
+        badge.setAttribute('aria-label', label);
+        return badge;
+    }
+
+    // Applies colors + accessibility to a paired element
+    function decoratePairableElement(element, accentColor, options = {}) {
+        if (!element) return;
+        const { minimal = false } = options;
+        element.classList.add('relation-pairable');
+        if (minimal) {
+            element.classList.add('relation-pairable--minimal');
+        } else {
+            element.classList.remove('relation-pairable--minimal');
+        }
+        element.style.setProperty('--pair-accent', accentColor);
+        element.style.setProperty('--pair-accent-glow', hexToRgba(accentColor, 0.35));
+        if (!element.hasAttribute('tabindex')) {
+            element.setAttribute('tabindex', '0');
+        }
+    }
+
+    // Links hover/focus interactions between the FD list and table
+    function bindPairingInteractions(fdElement, tableElement, options = {}) {
+        if (!fdElement || !tableElement) return;
+        const {
+            sourceHighlightClass = 'relation-pair-highlight',
+            targetHighlightClass = 'relation-pair-highlight'
+        } = options;
+
+        const addHighlight = () => {
+            if (sourceHighlightClass) fdElement.classList.add(sourceHighlightClass);
+            if (targetHighlightClass) tableElement.classList.add(targetHighlightClass);
+        };
+        const removeHighlight = () => {
+            if (sourceHighlightClass) fdElement.classList.remove(sourceHighlightClass);
+            if (targetHighlightClass) tableElement.classList.remove(targetHighlightClass);
+        };
+
+        const handleFocusOut = (source, event) => {
+            const nextTarget = event.relatedTarget;
+            if (nextTarget && (source.contains(nextTarget) || tableElement.contains(nextTarget) || fdElement.contains(nextTarget))) {
+                return;
+            }
+            removeHighlight();
+        };
+
+        fdElement.addEventListener('mouseenter', addHighlight);
+        tableElement.addEventListener('mouseenter', addHighlight);
+        fdElement.addEventListener('mouseleave', removeHighlight);
+        tableElement.addEventListener('mouseleave', removeHighlight);
+        fdElement.addEventListener('focusin', addHighlight);
+        tableElement.addEventListener('focusin', addHighlight);
+        fdElement.addEventListener('focusout', (event) => handleFocusOut(fdElement, event));
+        tableElement.addEventListener('focusout', (event) => handleFocusOut(tableElement, event));
+    }
+
+    // Pairing for the original FD panel/table
+    function setupOriginalSectionPairing(fdPanel, tableContainer) {
+        if (!fdPanel || !tableContainer) return;
+        if (fdPanel.dataset.originalPairBound === 'true') return;
+        fdPanel.dataset.originalPairBound = 'true';
+        const accentColor = getRelationAccent(0);
+        const panelGlow = hexToRgba(accentColor, 0.32);
+        const tableGlow = hexToRgba(accentColor, 0.26);
+        fdPanel.style.setProperty('--orig-pair-shadow', panelGlow);
+        tableContainer.style.setProperty('--orig-pair-shadow', tableGlow);
+        bindPairingInteractions(fdPanel, tableContainer, {
+            sourceHighlightClass: 'original-fd-highlight',
+            targetHighlightClass: 'original-table-highlight'
+        });
+    }
+
+    // Synchronizes badges, colors, and interactions for a relation group
+    function syncRelationPairing(groupEl) {
+        if (!groupEl) return;
+        const meta = relationMetaMap.get(groupEl);
+        if (!meta) return;
+
+        const groupIndex = typeof meta.order === 'number'
+            ? meta.order
+            : Array.from(relationMetaMap.keys()).indexOf(groupEl);
+        const accentColor = meta.pairAccent || getRelationAccent(groupIndex >= 0 ? groupIndex : 0);
+        const tableLabel = meta.tableLabel || `Table ${groupIndex + 1}`;
+        const relationLabel = tableLabel;
+
+        if (meta.baseWrapper) {
+            decoratePairableElement(meta.baseWrapper, accentColor);
+            meta.baseWrapper.dataset.relationLabel = relationLabel;
+
+            // Remove any existing table header badge
+            const existingHeader = meta.baseWrapper.querySelector('.relation-table-header');
+            if (existingHeader) {
+                existingHeader.remove();
+            }
+
+            // Create table header with badge styling
+            const tableHeader = document.createElement('div');
+            tableHeader.classList.add('relation-table-header');
+            tableHeader.textContent = tableLabel;
+            tableHeader.style.backgroundColor = accentColor;
+            tableHeader.style.color = getContrastColor(accentColor);
+            tableHeader.style.boxShadow = `0 8px 16px ${hexToRgba(accentColor, 0.35)}`;
+            tableHeader.style.border = `1px solid ${hexToRgba(accentColor, 0.45)}`;
+            tableHeader.setAttribute('aria-label', tableLabel);
+
+            // Insert at the beginning of wrapper
+            const firstChild = meta.baseWrapper.firstChild;
+            if (firstChild) {
+                meta.baseWrapper.insertBefore(tableHeader, firstChild);
+            } else {
+                meta.baseWrapper.appendChild(tableHeader);
+            }
+        }
+
+        if (meta.fdPanel) {
+            decoratePairableElement(meta.fdPanel, accentColor, { minimal: true });
+            meta.fdPanel.dataset.relationLabel = relationLabel;
+
+            const titleEl = meta.fdPanel.querySelector('h4');
+            if (titleEl) {
+                titleEl.textContent = `${relationLabel} - Functional Dependencies`;
+            }
+        }
+
+        if (meta.fdPanel && meta.baseWrapper && !meta.boundPairing) {
+            bindPairingInteractions(meta.fdPanel, meta.baseWrapper);
+            meta.boundPairing = true;
+        }
+    }
+
+    // Proceeds the chosen badge label/accent for a relation wrapper
+    function applyPairIdentity(wrapper, label, accentColor) {
+        if (!wrapper) return;
+
+        const groupEl = wrapper.closest('.relation-group');
+        if (groupEl && relationMetaMap.has(groupEl)) {
+            const meta = relationMetaMap.get(groupEl);
+            meta.pairLabel = label;
+            meta.pairAccent = accentColor;
+            meta.baseWrapper = wrapper;
+            meta.boundPairing = false;
+            meta.tableLabel = `Table ${groupEl.dataset.restoreIndex || (meta.order + 1)}`;
+            syncRelationPairing(groupEl);
+            return;
+        }
+
+        decoratePairableElement(wrapper, accentColor);
+        wrapper.dataset.relationLabel = label;
+        const titleEl = wrapper.querySelector('h3');
+        if (titleEl) {
+            titleEl.dataset.fallbackLabel = label;
+        }
+    }
 
     const IS_RESTORE_MODE = Array.isArray(window.currentRelationsColumns) && window.currentRelationsColumns.length > 0;
 
@@ -297,6 +609,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.originalNormalForm) {
             displayOriginalTableNormalFormBadges(origContainer, window.originalNormalForm);
         }
+
+        // If original table is large, keep it compact with vertical scroll
+        refreshTableVerticalScroll(origTable, 10);
+
+        if (originalFdPanel) {
+            setupOriginalSectionPairing(originalFdPanel, origContainer);
+        }
     }
 
     function applyRicColoring(tableEl) {
@@ -355,6 +674,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (origContainer) origContainer.appendChild(origRicTable);
     applyRicColoring(origRicTable);
+
+    // Keep RIC table compact as well (it can have same number of rows as original)
+    refreshTableVerticalScroll(origRicTable, 10);
 
     const originalShowRicBtn = document.getElementById('originalShowRicBtn');
     const originalReturnBtn = document.getElementById('originalReturnBtn');
@@ -993,10 +1315,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const group = document.createElement('div');
         group.classList.add('relation-group');
         group.dataset.relationId = relationId;
+        ensureRelationStatusEntry(group);
         // Remove inline styles - let CSS handle layout via .restore-layout .relation-group
 
         host.appendChild(group);
-        relationMetaMap.set(group, { relationId, baseWrapper: null, localContainer: null });
+        const order = relationMetaMap.size;
+        relationMetaMap.set(group, {
+            relationId,
+            baseWrapper: null,
+            localContainer: null,
+            pairLabel: null,
+            pairAccent: null,
+            tableLabel: `Table ${order + 1}`,
+            boundPairing: false,
+            order
+        });
+        group.dataset.restoreIndex = String(order + 1);
         return group;
     }
 
@@ -1043,6 +1377,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!meta) return;
 
             const displayFds = meta.displayFds || [];
+            if (!meta.pairAccent) {
+                meta.pairAccent = getRelationAccent(index);
+            }
+            const tableLabel = meta.tableLabel || `Table ${index + 1}`;
+            if (!meta.pairLabel) {
+                meta.pairLabel = tableLabel;
+            }
 
             // Create wrapper with exact same sizing as relation-group
             const wrapper = document.createElement('div');
@@ -1066,7 +1407,7 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.appendChild(showTransitiveBtn);
 
             const title = document.createElement('h4');
-            title.textContent = `Table ${index + 1} - Functional Dependencies`;
+            title.textContent = `${tableLabel} - Functional Dependencies`;
             panel.appendChild(title);
 
             const ul = document.createElement('ul');
@@ -1132,12 +1473,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 showTransitiveBtn.remove();
             });
 
+            panel.dataset.relationId = meta.relationId || `relation-${index + 1}`;
             wrapper.appendChild(panel);
+            meta.fdPanel = panel;
+            meta.fdWrapper = wrapper;
+            meta.boundPairing = false;
             container.appendChild(wrapper);
         });
 
         // Insert after "Original Table" heading
         heading.parentNode.insertBefore(container, heading.nextSibling);
+
+        // Sync badges/highlights now that FD panels exist
+        groups.forEach(group => syncRelationPairing(group));
     }
 
     function renderRelationBaseWrapper(group, options = {}) {
@@ -1170,9 +1518,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (!wrapper) return null;
+        ensureRelationStatusEntry(group);
 
         const titleEl = wrapper.querySelector('h3');
-        if (titleEl && relationTitle) titleEl.textContent = relationTitle;
+        if (titleEl) {
+            if (wrapper.classList.contains('orig-as-original')) {
+                titleEl.textContent = '';
+            } else if (relationTitle) {
+                titleEl.textContent = relationTitle;
+            }
+        }
 
         // FD list will be displayed separately under "Original Table" heading
         // No need to add it here anymore
@@ -1182,47 +1537,25 @@ document.addEventListener('DOMContentLoaded', () => {
             wrapper.dataset.normalForm = normalForm;
         }
 
+        if (typeof normalForm === 'string' && normalForm.trim().toUpperCase() === 'BCNF') {
+            setRelationBcnfStatus(group, true);
+        } else {
+            setRelationBcnfStatus(group, false);
+        }
+
         // BCNF status check and badge
         const cols = columns;
         const fdsForCheck = fdOriginal.length ? fdOriginal : fdList;
 
-        // Check BCNF status asynchronously
+        // Check BCNF status asynchronously to gate follow-up actions
         checkRelationBCNF(wrapper, cols, fdsForCheck).then(isBCNF => {
-            // Add BCNF badge to title
-            if (titleEl) {
-                const existingBadge = titleEl.querySelector('.bcnf-status-badge');
-                if (existingBadge) existingBadge.remove();
-
-                const badge = document.createElement('span');
-                badge.classList.add('bcnf-status-badge');
-
-                if (isBCNF) {
-                    badge.classList.add('bcnf-yes');
-                    badge.textContent = '✅ BCNF';
-                    badge.title = 'This relation is already in BCNF. No decomposition needed.';
-                    wrapper.dataset.isBcnf = 'true';
-                } else {
-                    badge.classList.add('bcnf-no');
-                    badge.textContent = '🔴 NOT BCNF';
-                    badge.title = 'This relation is NOT in BCNF. Decomposition required.';
-                    wrapper.dataset.isBcnf = 'false';
-                }
-
-                titleEl.appendChild(document.createTextNode(' '));
-                titleEl.appendChild(badge);
-            }
-
-            // Disable "Add Decomposed Table" button if BCNF
             updateAddTableButtonState(group, isBCNF);
-
-            // Display normal form badges if provided
+            setRelationBcnfStatus(group, isBCNF);
             if (normalForm && wrapper) {
                 displayNormalFormBadges(wrapper, normalForm);
             }
         }).catch(err => {
             console.error('BCNF check failed:', err);
-
-            // Even on error, try to display normal form badges
             if (normalForm && wrapper) {
                 displayNormalFormBadges(wrapper, normalForm);
             }
@@ -1241,6 +1574,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (footer && !showFooter) footer.style.display = 'none';
 
         meta.baseWrapper = wrapper;
+
+        const relationIndex = relationMetaMap.size - 1;
+        const accentColor = getRelationAccent(relationIndex);
+        const label = relationTitle || `Relation ${relationIndex + 1}`;
+        applyPairIdentity(wrapper, label, accentColor);
+
         return wrapper;
     }
 
@@ -2775,9 +3114,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Check the BCNF flag
+            // Check the BCNF flag against the scoped result
             const scopeResult = relationGroup ? lastScopedComputation?.response : window._lastDecomposeResult;
-            const isBcnf = scopeResult && scopeResult.bcnfdecomposition === true;
+            const localBcnf = scopeResult && scopeResult.bcnfdecomposition === true;
 
             // Show the calculation success message (after pressing "Compute Plaque" button) and wait for it to close
             await Swal.fire({
@@ -2788,44 +3127,28 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             // ------------------------------------------------------------------------------------
 
-            if (isBcnf) {
+            let finalAttempts = 0;
+            let finalElapsed = 0;
+            if (localBcnf) {
                 const CURRENT_TIME_MS = Date.now();
-                const finalElapsedSecs = Math.max(0, Math.floor((CURRENT_TIME_MS - SESSION_START_TIME_MS) / 1000));
-                const finalAttempts = parseInt(attemptEl?.textContent || '0', 10);
-                const finalElapsed = finalElapsedSecs;
-
-
-                // Hide all action buttons except "Show BCNF Tables"
-                if (computeAllBtn) computeAllBtn.style.display = 'none';
-                if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
-                if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
-                if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
-                if (addTableBtn) addTableBtn.style.display = 'none';
-
-                window._lastBcnfMeta = {
-                    attempts: finalAttempts,
-                    elapsed: finalElapsed
-                };
-                if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'inline-block';
-                ricComputationInProgress = false;
-                return;
+                finalElapsed = Math.max(0, Math.floor((CURRENT_TIME_MS - SESSION_START_TIME_MS) / 1000));
+                const parsedAttempts = parseInt(attemptEl?.textContent || '0', 10);
+                finalAttempts = Number.isFinite(parsedAttempts) ? parsedAttempts : 0;
             }
-            if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'none';
-            window._lastBcnfMeta = null;
 
-            // If not BCNF, show Continue Normalization button
-            // This applies to BOTH:
-            // 1. Initial normalization (relationGroup = null)
-            // 2. Nested normalization (relationGroup != null but still not BCNF)
-            // The button allows user to continue decomposition until BCNF is achieved
-            if (computeAllBtn) {
-                computeAllBtn.style.display = 'none';
-            }
-            if (continueNormalizationBtn) {
-                continueNormalizationBtn.style.display = 'inline-block';
-            }
+            const globalComplete = applyGlobalBcnfOutcome({
+                relationGroup,
+                localBcnf,
+                finalAttempts,
+                finalElapsed
+            });
 
             ricComputationInProgress = false;
+            if (globalComplete) {
+                return;
+            }
+
+            return;
         } catch (err) {
             console.error('decompose-all failed', err);
             Swal.fire({
@@ -2973,6 +3296,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = table.createTBody();
         leftCol.appendChild(table);
 
+        // If the decomposed table becomes tall (10+ rows), apply vertical scrolling.
+        // Note: we refresh after renders because row count is determined by tbody.
+        refreshTableVerticalScroll(table, 10);
+
         // Warning container
         const warnDiv = document.createElement('div');
         warnDiv.classList.add('decompose-warnings');
@@ -3055,6 +3382,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.innerHTML = '';
             if (decomposedCols.length === 0) {
                 try { wrapper.dataset.columns = JSON.stringify([]); } catch (e) { wrapper.dataset.columns = '[]'; }
+                // No rows -> no need for scroll wrapper
+                refreshTableVerticalScroll(table, 10);
                 return;
             }
 
@@ -3107,6 +3436,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             try { wrapper.dataset.columns = JSON.stringify(decomposedCols); } catch (e) { wrapper.dataset.columns = '[]'; }
+
+            // Re-evaluate vertical scroll after body has been rebuilt.
+            refreshTableVerticalScroll(table, 10);
         }
 
         // Sortable on the headRow
@@ -3368,6 +3700,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             try { wrapper.dataset.columns = JSON.stringify(decomposedCols); } catch(e) {}
+
+            // Restore mode may fill tbody without calling renderDecomposed().
+            // Ensure vertical scroll is applied consistently.
+            refreshTableVerticalScroll(table, 10);
         }
 
         // If initialFds provided, set dataset and fd-list

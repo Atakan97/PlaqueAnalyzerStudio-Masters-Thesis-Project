@@ -178,21 +178,53 @@ public class RicService {
 	}
 
 	/**
-	 * Building the ordered list of strategies will be applied for the computation. Duplicates are filtered out so that
-	 * the same Monte Carlo configuration will never be tried twice.
+	 * Adaptive computation strategy:
+	 * - If user selects Exact: Exact → MC 100K → MC 10K → MC 1K (no timeout on last)
+	 * - If user selects MC with X samples: X samples → lower samples → ... → MC 1K (no timeout on last)
 	 *
-	 * Order: User's choice → MC 100K → MC 10K → MC 1K (with extended timeout for last resort)
+	 * Examples:
+	 * - Exact selected: Exact (10s) → 100K (10s) → 10K (10s) → 1K (no timeout)
+	 * - 100K selected: 100K (10s) → 10K (10s) → 1K (no timeout)
+	 * - 10K selected: 10K (10s) → 1K (no timeout)
+	 * - 1K selected: 1K (no timeout) - directly uses the final fallback
 	 */
 	private List<RicAttempt> buildAttempts(boolean initialMonteCarlo, int initialSamples) {
 		List<RicAttempt> attempts = new ArrayList<>();
 		Set<String> seen = new LinkedHashSet<>();
 
-		int normalizedInitialSamples = initialMonteCarlo ? Math.max(initialSamples, 1) : 0;
-		addAttempt(attempts, seen, new RicAttempt(initialMonteCarlo, normalizedInitialSamples, 10));
-		addAttempt(attempts, seen, new RicAttempt(true, 100_000, 10));
-		addAttempt(attempts, seen, new RicAttempt(true, 10_000, 10));
-		// MC 1000 samples with extended timeout (30s) as last resort for large datasets
-		addAttempt(attempts, seen, new RicAttempt(true, 1_000, 30000));
+		// Define all available Monte Carlo sample levels in descending order
+		List<Integer> mcLevels = Arrays.asList(100_000, 10_000, 1_000);
+
+		if (!initialMonteCarlo) {
+			// User selected Exact calculation
+			// Strategy: Exact → 100K → 10K → 1K (no timeout)
+			addAttempt(attempts, seen, new RicAttempt(false, 0, 10));
+			addAttempt(attempts, seen, new RicAttempt(true, 100_000, 10));
+			addAttempt(attempts, seen, new RicAttempt(true, 10_000, 10));
+			addAttempt(attempts, seen, new RicAttempt(true, 1_000, Integer.MAX_VALUE)); // No timeout for last fallback
+		} else {
+			// User selected Monte Carlo with specific sample count
+			int normalizedSamples = Math.max(initialSamples, 1);
+
+			// Special handling: if user selected 1K samples or less, use no timeout from start
+			// since 1K is our final fallback
+			if (normalizedSamples <= 1_000) {
+				addAttempt(attempts, seen, new RicAttempt(true, normalizedSamples, Integer.MAX_VALUE));
+			} else {
+				// Start with user's choice (with 10s timeout)
+				addAttempt(attempts, seen, new RicAttempt(true, normalizedSamples, 10));
+
+				// Add fallback strategies: all MC levels lower than user's choice
+				// Levels: 100K, 10K, 1K
+				for (int level : mcLevels) {
+					if (level < normalizedSamples) {
+						boolean isLastFallback = (level == 1_000);
+						int timeout = isLastFallback ? Integer.MAX_VALUE : 10;
+						addAttempt(attempts, seen, new RicAttempt(true, level, timeout));
+					}
+				}
+			}
+		}
 
 		return attempts;
 	}
@@ -417,3 +449,4 @@ public class RicService {
 		return out;
 	}
 }
+
