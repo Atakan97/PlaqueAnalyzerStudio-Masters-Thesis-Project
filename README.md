@@ -6,7 +6,7 @@ A web application for displaying relational information content(plaque) and proc
 The app is implemented with **Spring Boot** and **Maven**, and relies on the  
 [`relational_information_content`](https://github.com/sdbs-uni-p/relational_information_content) tool (included as an external JAR in `libs/`).
 
-<img width="497" height="800" alt="projectss1" src="https://github.com/user-attachments/assets/3245e056-2c52-4a73-9d60-699cddce66bc" />
+<img width="1251" height="1661" alt="projectss1" src="https://github.com/user-attachments/assets/3a323001-f2d7-4e05-80a6-8724eca2673e" />
 
 <img width="1092" height="892" alt="projectss2" src="https://github.com/user-attachments/assets/667b000f-fa85-4a15-9220-a0c7f06130d2" />
 
@@ -137,4 +137,5 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 
    In order to run the app, please go to the http://localhost:8080.
+
 
