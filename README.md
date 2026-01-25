@@ -1,6 +1,6 @@
 # MT-Atakan-Celik-Code
 
-## Plaque Calculator App
+## PlaqueAnalyzer Studio
 
 A web application for displaying relational information content(plaque) and processing with normalization steps.  
 The app is implemented with **Spring Boot** and **Maven**, and relies on the  
@@ -137,6 +137,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 
    In order to run the app, please go to the http://localhost:8080.
+
 
 
 
